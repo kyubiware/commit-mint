@@ -156,6 +156,11 @@ export async function showRecoveryMenu(
 					hint: clipboardCopied ? "Copied!" : "Paste into another terminal for an AI agent",
 				},
 				{
+					label: "View full error output",
+					value: "view",
+					hint: "Show the raw stderr from hooks",
+				},
+				{
 					label: "Skip hooks and commit (--no-verify)",
 					value: "skip",
 					hint: "Commit anyway, fix later",
@@ -191,6 +196,11 @@ export async function showRecoveryMenu(
 				} else {
 					p.log.warn(red("No clipboard tool found. Install xclip, wl-copy, or xsel."));
 				}
+				continue;
+			}
+			case "view": {
+				p.note(rawStderr.trim() || "(no raw output)", "Full error output");
+				showNote = true;
 				continue;
 			}
 			case "skip": {
