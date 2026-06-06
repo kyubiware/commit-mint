@@ -1,4 +1,3 @@
-import Groq from "groq-sdk";
 import { debug } from "../utils/debug.js";
 import {
 	buildStatSummary,
@@ -7,6 +6,7 @@ import {
 	extractContentText,
 	mapGroqError,
 } from "./ai.js";
+import { createProvider, formatProviderName, type ProviderName } from "./provider.js";
 
 function buildReviewSystemPrompt(): string {
 	return [
@@ -45,6 +45,7 @@ function buildReviewPrompt(diff: string, files: string[], statSummary: string): 
 	return parts.join("\n");
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: AI pipeline — prompt build, call, error mapping
 export async function generateCodeReview(
 	diff: string,
 	files: string[],
@@ -52,11 +53,19 @@ export async function generateCodeReview(
 		apiKey: string;
 		model?: string;
 		timeout?: number;
+		provider?: ProviderName;
+		proxy?: string;
 	},
 ): Promise<string> {
 	debug("generateCodeReview: model=%s, files=%d", options.model ?? "default", files.length);
 	const timeoutMs = options.timeout ?? 60000;
-	const client = new Groq({ apiKey: options.apiKey, timeout: timeoutMs });
+	const { client, model } = createProvider({
+		provider: options.provider ?? "groq",
+		apiKey: options.apiKey,
+		modelOverride: options.model,
+		timeout: timeoutMs,
+		baseURLOverride: options.proxy,
+	});
 	const compressedDiff = compressDiff(diff);
 	const statSummary = buildStatSummary(diff);
 	const systemPrompt = buildReviewSystemPrompt();
@@ -76,7 +85,7 @@ export async function generateCodeReview(
 				{ role: "system", content: systemPrompt },
 				{ role: "user", content: userPrompt },
 			],
-			model: options.model ?? "openai/gpt-oss-20b",
+			model: model,
 			temperature: 0.3,
 			max_tokens: 4096,
 		});
@@ -105,6 +114,7 @@ export async function generateCodeReview(
 		return content;
 	} catch (error) {
 		debug("generateCodeReview error: %s", error instanceof Error ? error.message : String(error));
-		throw mapGroqError(error);
+		const providerLabel = options.provider ? formatProviderName(options.provider) : undefined;
+		throw mapGroqError(error, providerLabel);
 	}
 }

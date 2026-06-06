@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreate = vi.fn();
+const { mockCreateProvider } = vi.hoisted(() => ({
+	mockCreateProvider: vi.fn(),
+}));
 
 vi.mock("groq-sdk", () => {
 	class MockAPIError extends Error {
@@ -50,11 +53,25 @@ vi.mock("groq-sdk", () => {
 	};
 });
 
+vi.mock("./provider.js", () => ({
+	createProvider: mockCreateProvider,
+	PROVIDER_CONFIGS: {
+		groq: { baseURL: "https://api.groq.com/openai/v1/", defaultModel: "openai/gpt-oss-20b" },
+		cerebras: { baseURL: "https://api.cerebras.ai/v1/", defaultModel: "gpt-oss-120b" },
+		mistral: { baseURL: "https://api.mistral.ai/v1/", defaultModel: "mistral-small" },
+	},
+	formatProviderName: vi.fn((name: string) => name.charAt(0).toUpperCase() + name.slice(1)),
+}));
+
 import { generateCommitMessage } from "./ai.js";
 
 describe("generateCommitMessage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockCreateProvider.mockImplementation((options) => ({
+			client: { chat: { completions: { create: mockCreate } } },
+			model: options?.modelOverride ?? "openai/gpt-oss-20b",
+		}));
 	});
 
 	it("returns valid conventional commit on happy path", async () => {
@@ -317,7 +334,7 @@ describe("generateCommitMessage", () => {
 		mockCreate.mockRejectedValue(new Groq.AuthenticationError(401, {}, "Unauthorized", {}));
 
 		await expect(generateCommitMessage("some diff", { apiKey: "test_key" })).rejects.toThrow(
-			"Invalid GROQ_API_KEY",
+			"Invalid API key for Groq",
 		);
 	});
 
@@ -502,5 +519,52 @@ describe("generateCommitMessage", () => {
 		});
 		const result = await generateCommitMessage("some diff", { apiKey: "test_key" });
 		expect(result).toBe("feat: add caching layer");
+	});
+
+	// ── Provider factory support ──
+
+	it("passes provider to createProvider", async () => {
+		mockCreate.mockResolvedValue({
+			choices: [{ message: { content: "feat: test" } }],
+		});
+
+		await generateCommitMessage("diff --git a/file b/file", {
+			apiKey: "key",
+			provider: "cerebras",
+		});
+
+		expect(mockCreateProvider).toHaveBeenCalledWith(
+			expect.objectContaining({ provider: "cerebras" }),
+		);
+	});
+
+	it("defaults provider to groq", async () => {
+		mockCreate.mockResolvedValue({
+			choices: [{ message: { content: "feat: test" } }],
+		});
+
+		await generateCommitMessage("diff --git a/file b/file", {
+			apiKey: "key",
+		});
+
+		expect(mockCreateProvider).toHaveBeenCalledWith(expect.objectContaining({ provider: "groq" }));
+	});
+
+	it("uses model from factory return value", async () => {
+		mockCreate.mockResolvedValue({
+			choices: [{ message: { content: "feat: test" } }],
+		});
+
+		mockCreateProvider.mockReturnValue({
+			client: { chat: { completions: { create: mockCreate } } },
+			model: "gpt-oss-120b",
+		});
+
+		await generateCommitMessage("diff --git a/file b/file", {
+			apiKey: "key",
+		});
+
+		const callArgs = mockCreate.mock.calls[0][0];
+		expect(callArgs.model).toBe("gpt-oss-120b");
 	});
 });

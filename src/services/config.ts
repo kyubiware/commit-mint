@@ -3,12 +3,19 @@ import os from "node:os";
 import { join } from "node:path";
 import ini from "ini";
 import { debug } from "../utils/debug.js";
+import { formatProviderName, PROVIDER_ENV_KEYS, type ProviderName } from "./provider.js";
 
 const CONFIG_PATH = join(os.homedir(), ".commit-mint");
 
 interface Config {
 	GROQ_API_KEY?: string;
+	CEREBRAS_API_KEY?: string;
+	MISTRAL_API_KEY?: string;
+	provider?: string;
 	model?: string;
+	model_groq?: string;
+	model_cerebras?: string;
+	model_mistral?: string;
 	locale?: string;
 	"max-length"?: string;
 	type?: string;
@@ -17,6 +24,7 @@ interface Config {
 }
 
 const defaults: Config = {
+	provider: "groq",
 	model: "openai/gpt-oss-20b",
 	locale: "en",
 	"max-length": "100",
@@ -67,5 +75,41 @@ export async function getApiKey(): Promise<string> {
 	}
 
 	debug("getApiKey: not found");
-	throw new Error("Please set your Groq API key via `cmint config set GROQ_API_KEY=<your token>`");
+	throw new Error(
+		"Please set your Groq API key via `cmint config set GROQ_API_KEY=<your token>`. " +
+			"Multi-provider: set `cmint config set provider=cerebras` for Cerebras, or `cmint config set provider=mistral` for Mistral.",
+	);
+}
+
+export async function getProviderApiKey(provider: string): Promise<string> {
+	const envVar = PROVIDER_ENV_KEYS[provider as ProviderName];
+	if (envVar) {
+		const envValue = process.env[envVar];
+		if (envValue) {
+			debug("getProviderApiKey(%s): found in env", provider);
+			return envValue;
+		}
+	}
+
+	const config = await readConfig();
+	const configKey = PROVIDER_ENV_KEYS[provider as ProviderName];
+	if (configKey && (config as Record<string, string | undefined>)[configKey]) {
+		debug("getProviderApiKey(%s): found in config", provider);
+		const val = (config as Record<string, string | undefined>)[configKey];
+		return val as string;
+	}
+
+	debug("getProviderApiKey(%s): not found", provider);
+	throw new Error(
+		`Please set your ${formatProviderName(provider)} API key via \`cmint config set ${envVar}=<your token>\``,
+	);
+}
+
+export function getModelForProvider(
+	config: Config,
+	provider: string,
+	defaultModel: string,
+): string {
+	const modelKey = `model_${provider}` as keyof Config;
+	return config[modelKey] ?? config.model ?? defaultModel;
 }

@@ -1,20 +1,24 @@
 import Groq from "groq-sdk";
 import { debug } from "../utils/debug.js";
+import { createProvider, formatProviderName, type ProviderName } from "./provider.js";
 
 const MAX_DIFF_CHARS = 20000;
 
-export function mapGroqError(error: unknown): Error {
+export function mapGroqError(error: unknown, providerLabel?: string): Error {
+	const label = providerLabel ?? "Groq";
 	if (error instanceof Groq.AuthenticationError) {
-		return new Error("Invalid GROQ_API_KEY. Run: cmint config set GROQ_API_KEY=<key>");
+		return new Error(
+			`Invalid API key for ${label}. Run: cmint config set ${label.toUpperCase()}_API_KEY=<key>`,
+		);
 	}
 	if (error instanceof Groq.RateLimitError) {
-		return new Error("Rate limited by Groq. Please wait and try again.");
+		return new Error(`Rate limited by ${label}. Please wait and try again.`);
 	}
 	if (error instanceof Groq.APIConnectionTimeoutError) {
 		return new Error("Request timed out. Check your network or try a smaller diff.");
 	}
 	if (error instanceof Groq.APIError) {
-		return new Error(`Groq API error: ${error.message}`);
+		return new Error(`${label} API error: ${error.message}`);
 	}
 	return new Error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
 }
@@ -169,22 +173,27 @@ export async function generateCommitMessage(
 		type?: string;
 		timeout?: number;
 		hint?: string;
+		provider?: ProviderName;
+		proxy?: string;
 	},
 ): Promise<string> {
-	debug(
-		"generateCommitMessage: model=%s, type=%s, hint=%s",
-		options.model ?? "default",
-		options.type ?? "none",
-		options.hint ?? "none",
-	);
-
 	const timeoutMs = options.timeout ?? 60000;
 	debug("Timeout: %d ms", timeoutMs);
 
-	const client = new Groq({
+	const { client, model } = createProvider({
+		provider: options.provider ?? "groq",
 		apiKey: options.apiKey,
+		modelOverride: options.model,
 		timeout: timeoutMs,
+		baseURLOverride: options.proxy,
 	});
+
+	debug(
+		"generateCommitMessage: model=%s, type=%s, hint=%s",
+		model,
+		options.type ?? "none",
+		options.hint ?? "none",
+	);
 
 	const compressedDiff = compressDiff(diff);
 	const statSummary = buildStatSummary(diff);
@@ -203,18 +212,18 @@ export async function generateCommitMessage(
 		debug(
 			"callAI: %s — model=%s, promptLen=%d, systemLen=%d",
 			isRetry ? "RETRY (strict)" : "INITIAL",
-			options.model ?? "openai/gpt-oss-20b",
+			model,
 			userPrompt.length,
 			(strictSystemPrompt ?? systemPrompt).length,
 		);
 		try {
-			const isReasoningModel = /^(o[1-9]|.*gpt-oss.*|.*gpt-5.*)/i.test(options.model ?? "");
+			const isReasoningModel = /^(o[1-9]|.*gpt-oss.*|.*gpt-5.*)/i.test(model);
 			const completion = await client.chat.completions.create({
 				messages: [
 					{ role: "system", content: strictSystemPrompt ?? systemPrompt },
 					{ role: "user", content: userPrompt },
 				],
-				model: options.model ?? "openai/gpt-oss-20b",
+				model,
 				temperature: 0.3,
 				...(isReasoningModel ? { max_completion_tokens: 1024 } : { max_tokens: 1024 }),
 				reasoning_format: "parsed",
@@ -299,6 +308,7 @@ export async function generateCommitMessage(
 		return message;
 	} catch (error) {
 		debug("AI error: %s", error instanceof Error ? error.message : String(error));
-		throw mapGroqError(error);
+		const providerLabel = options.provider ? formatProviderName(options.provider) : undefined;
+		throw mapGroqError(error, providerLabel);
 	}
 }

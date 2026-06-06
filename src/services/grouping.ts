@@ -1,7 +1,8 @@
-import Groq from "groq-sdk";
 import { debug } from "../utils/debug.js";
+import { mapGroqError } from "./ai.js";
 import type { ChangedFile } from "./git.js";
 import { getDefaultExcludes } from "./git.js";
+import { createProvider, formatProviderName, type ProviderName } from "./provider.js";
 
 export interface CommitGroup {
 	name: string;
@@ -12,22 +13,6 @@ export interface CommitGroup {
 export interface GroupingResult {
 	groups: CommitGroup[];
 	excluded: string[];
-}
-
-function mapGroqError(error: unknown): Error {
-	if (error instanceof Groq.AuthenticationError) {
-		return new Error("Invalid GROQ_API_KEY. Run: cmint config set GROQ_API_KEY=<key>");
-	}
-	if (error instanceof Groq.RateLimitError) {
-		return new Error("Rate limited by Groq. Please wait and try again.");
-	}
-	if (error instanceof Groq.APIConnectionTimeoutError) {
-		return new Error("Request timed out. Check your network and try again.");
-	}
-	if (error instanceof Groq.APIError) {
-		return new Error(`Groq API error: ${error.message}`);
-	}
-	return new Error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 function matchesExcludePattern(filePath: string, pattern: string): boolean {
@@ -163,11 +148,14 @@ function parseGroupingResponse(content: string): CommitGroup[] {
 	return rawGroups;
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Multi-step generation flow
 export async function generateGroups(
 	files: ChangedFile[],
 	apiKey: string,
 	model?: string,
 	timeout?: number,
+	provider?: ProviderName,
+	proxy?: string,
 ): Promise<GroupingResult> {
 	debug("generateGroups: %d files, model=%s", files.length, model ?? "default");
 
@@ -186,7 +174,13 @@ export async function generateGroups(
 	debug("User prompt length: %d chars", userPrompt.length);
 
 	const timeoutMs = timeout ?? 60000;
-	const client = new Groq({ apiKey, timeout: timeoutMs });
+	const { client, model: resolvedModel } = createProvider({
+		provider: provider ?? "groq",
+		apiKey,
+		modelOverride: model,
+		timeout: timeoutMs,
+		baseURLOverride: proxy,
+	});
 
 	try {
 		const completion = await client.chat.completions.create({
@@ -194,7 +188,7 @@ export async function generateGroups(
 				{ role: "system", content: systemPrompt },
 				{ role: "user", content: userPrompt },
 			],
-			model: model ?? "openai/gpt-oss-20b",
+			model: resolvedModel,
 			temperature: 0.3,
 			max_tokens: 2048,
 		});
@@ -223,7 +217,8 @@ export async function generateGroups(
 		return { groups: validated, excluded };
 	} catch (error) {
 		debug("generateGroups error: %s", error instanceof Error ? error.message : String(error));
-		throw mapGroqError(error);
+		const providerLabel = provider ? formatProviderName(provider) : undefined;
+		throw mapGroqError(error, providerLabel);
 	}
 }
 

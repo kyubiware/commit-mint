@@ -1,6 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangedFile } from "./git.js";
 import { buildGroupingSystemPrompt, filterExcludedFiles } from "./grouping.js";
+
+const mockCreateProvider = vi.hoisted(() => vi.fn());
+
+vi.mock("./provider.js", () => ({
+	createProvider: mockCreateProvider,
+	PROVIDER_CONFIGS: {
+		groq: { baseURL: "https://api.groq.com/openai/v1/", defaultModel: "openai/gpt-oss-20b" },
+		cerebras: { baseURL: "https://api.cerebras.ai/v1/", defaultModel: "gpt-oss-120b" },
+		mistral: { baseURL: "https://api.mistral.ai/v1/", defaultModel: "mistral-small" },
+	},
+	isValidProvider: vi.fn((name: string) => ["groq", "cerebras", "mistral"].includes(name)),
+	formatProviderName: vi.fn((name: string) => name.charAt(0).toUpperCase() + name.slice(1)),
+}));
+
+vi.mock("./ai.js", () => ({
+	mapGroqError: vi.fn((e: unknown) => (e instanceof Error ? e : new Error(String(e)))),
+}));
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	const mockChatCreate = vi.fn();
+	mockCreateProvider.mockReturnValue({
+		client: { chat: { completions: { create: mockChatCreate } } },
+		model: "openai/gpt-oss-20b",
+	});
+});
 
 describe("filterExcludedFiles", () => {
 	it("includes package-lock.json when package.json is present", () => {
