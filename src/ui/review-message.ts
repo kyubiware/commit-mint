@@ -2,7 +2,9 @@ import { isCancel, log, outro, spinner } from "@clack/prompts";
 import { bold, dim, green, red } from "kolorist";
 import { isOpenCodeAvailable, reviewWithGroq, reviewWithOpenCode } from "../commands/review.js";
 import { copyToClipboard } from "../services/clipboard.js";
+import { readConfig } from "../services/config.js";
 import { getStagedDiff } from "../services/git.js";
+import { formatProviderName, isValidProvider, type ProviderName } from "../services/provider.js";
 import { debug } from "../utils/debug.js";
 
 export async function runCodeReview(): Promise<void> {
@@ -13,8 +15,16 @@ export async function runCodeReview(): Promise<void> {
 	}
 
 	const opencodeAvailable = await isOpenCodeAvailable();
+	const config = await readConfig();
+	const provider: ProviderName = isValidProvider(config.provider ?? "groq")
+		? (config.provider as ProviderName)
+		: "groq";
 	const s = spinner();
-	s.start(opencodeAvailable ? "Running OpenCode review..." : "Running Groq review...");
+	s.start(
+		opencodeAvailable
+			? "Running OpenCode review..."
+			: `Running ${formatProviderName(provider)} review...`,
+	);
 
 	try {
 		const report = opencodeAvailable
