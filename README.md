@@ -11,7 +11,50 @@ npm install -g @kyubiware/commit-mint
 ```
 
 ```bash
-cmint
+cmint -a
+```
+
+```
+┌  commit-mint
+│
+◇  Files analyzed
+│
+●  Commit group 1 of 3: "Reading view refactor"
+│
+◇  Message generated
+│
+●  feat(compound): add compound utilities and token handling for text study
+│
+◇  Committed successfully.
+│
+●    ✓ prettier
+│    ✓ eslint
+│    ✓ tsc
+│    ✓ vitest
+◇  Message generated
+│
+●  feat(text-study): add compound component support to ReadingInspectorPanel
+│
+◇  Committed successfully.
+│
+●    ✓ prettier
+│    ✓ eslint
+│    ✓ tsc
+│    ✓ vitest
+│
+●  Commit group 3 of 3: "Reading study list update"
+◇  Message generated
+│
+●  feat(reading-study-list-body): add compound component support to reading study list
+│
+◇  Committed successfully.
+│
+●    ✓ prettier
+│    ✓ eslint
+│    ✓ tsc
+│    ✓ vitest
+│
+└  All groups committed.
 ```
 
 Requires **Node.js 18+**.
