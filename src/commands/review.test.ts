@@ -25,8 +25,24 @@ vi.mock("../services/git.js", () => ({
 }));
 
 vi.mock("../services/config.js", () => ({
-	getApiKey: vi.fn(),
-	readConfig: vi.fn(),
+	readConfig: vi.fn().mockResolvedValue({
+		model: "openai/gpt-oss-20b",
+		provider: "groq",
+		locale: "en",
+		timeout: "10000",
+	}),
+	getProviderApiKey: vi.fn().mockResolvedValue("test-api-key"),
+	getModelForProvider: vi.fn().mockReturnValue("openai/gpt-oss-20b"),
+}));
+
+vi.mock("../services/provider.js", () => ({
+	isValidProvider: vi.fn((name: string) => name === "groq"),
+	PROVIDER_CONFIGS: {
+		groq: { baseURL: "https://api.groq.com/openai/v1/", defaultModel: "openai/gpt-oss-20b" },
+		cerebras: { baseURL: "https://api.cerebras.ai/v1/", defaultModel: "gpt-oss-120b" },
+		mistral: { baseURL: "https://api.mistral.ai/v1/", defaultModel: "mistral-small" },
+	},
+	formatProviderName: vi.fn((name: string) => name.charAt(0).toUpperCase() + name.slice(1)),
 }));
 
 vi.mock("../services/review-ai.js", () => ({
@@ -49,8 +65,9 @@ vi.mock("execa", () => ({
 
 import { note, outro, select } from "@clack/prompts";
 import { copyToClipboard } from "../services/clipboard.js";
-import { getApiKey, readConfig } from "../services/config.js";
+import { getModelForProvider, getProviderApiKey, readConfig } from "../services/config.js";
 import { assertGitRepo, getRepoRoot, getStagedDiff, stageAll } from "../services/git.js";
+import { isValidProvider } from "../services/provider.js";
 import { generateCodeReview } from "../services/review-ai.js";
 
 const mockedAssertGitRepo = vi.mocked(assertGitRepo);
@@ -58,7 +75,9 @@ const mockedGetStagedDiff = vi.mocked(getStagedDiff);
 const mockedGetRepoRoot = vi.mocked(getRepoRoot);
 const mockedStageAll = vi.mocked(stageAll);
 const mockedReadConfig = vi.mocked(readConfig);
-const mockedGetApiKey = vi.mocked(getApiKey);
+const mockedGetProviderApiKey = vi.mocked(getProviderApiKey);
+const mockedGetModelForProvider = vi.mocked(getModelForProvider);
+const mockedIsValidProvider = vi.mocked(isValidProvider);
 const mockedGenerateCodeReview = vi.mocked(generateCodeReview);
 const mockedCopyToClipboard = vi.mocked(copyToClipboard);
 const mockedSelect = vi.mocked(select);
@@ -81,9 +100,13 @@ describe("reviewCommand", () => {
 		mockedGetRepoRoot.mockResolvedValue("/fake/repo");
 		mockedReadConfig.mockResolvedValue({
 			model: "openai/gpt-oss-20b",
+			provider: "groq",
+			locale: "en",
 			timeout: "30000",
 		});
-		mockedGetApiKey.mockResolvedValue("gsk_test-key");
+		mockedGetProviderApiKey.mockResolvedValue("gsk_test-key");
+		mockedGetModelForProvider.mockReturnValue("openai/gpt-oss-20b");
+		mockedIsValidProvider.mockReturnValue(true);
 		mockedGenerateCodeReview.mockResolvedValue("All good!");
 
 		// Default: opencode not available
@@ -130,7 +153,11 @@ describe("reviewCommand", () => {
 
 		await reviewCommand();
 
-		expect(mockedGenerateCodeReview).toHaveBeenCalled();
+		expect(mockedGenerateCodeReview).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.any(Array),
+			expect.objectContaining({ provider: "groq" }),
+		);
 	});
 
 	it("shows review findings and copies to clipboard", async () => {

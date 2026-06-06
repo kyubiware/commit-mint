@@ -1,6 +1,6 @@
 import { intro, isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
-import { getApiKey, setConfigValue } from "../services/config.js";
+import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	assertGitRepo,
 	attemptCommit,
@@ -15,6 +15,12 @@ import {
 import { createProgressHandler } from "../services/hook-progress.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import { hasLintStagedConfig, runLintStaged } from "../services/lint-staged.js";
+import {
+	formatProviderName,
+	isValidProvider,
+	PROVIDER_ENV_KEYS,
+	type ProviderName,
+} from "../services/provider.js";
 import { showRecoveryMenu, showStagingMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { loadCachedCommit, saveCachedCommit } from "../utils/cache.js";
@@ -246,22 +252,27 @@ export async function commitCommand(flags: CommitFlags) {
 		message = flags.message;
 	} else {
 		// Ensure API key is available before generating
+		const config = await readConfig();
+		const provider: ProviderName = isValidProvider(config.provider ?? "groq")
+			? (config.provider as ProviderName)
+			: "groq";
 		try {
-			await getApiKey();
+			await getProviderApiKey(provider);
 			debug("API key found");
 		} catch {
 			debug("No API key found, prompting user");
 			const { text: promptText } = await import("@clack/prompts");
+			const configKey = PROVIDER_ENV_KEYS[provider];
 			const key = await promptText({
-				message: "Enter your Groq API key:",
-				placeholder: "gsk_...",
+				message: `Enter your ${formatProviderName(provider)} API key:`,
+				placeholder: provider === "groq" ? "gsk_..." : "...",
 				validate: (v) => (v?.trim() ? undefined : "API key is required"),
 			});
 			if (isCancel(key)) {
 				outro(dim("Cancelled."));
 				return;
 			}
-			await setConfigValue("GROQ_API_KEY", String(key).trim());
+			await setConfigValue(configKey, String(key).trim());
 			debug("API key saved to config");
 		}
 

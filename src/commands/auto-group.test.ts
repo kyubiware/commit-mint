@@ -25,6 +25,25 @@ vi.mock("../services/config.js", () => ({
 	getApiKey: vi.fn(),
 	readConfig: vi.fn(),
 	setConfigValue: vi.fn(),
+	getProviderApiKey: vi.fn(),
+	getModelForProvider: vi.fn().mockReturnValue("openai/gpt-oss-20b"),
+}));
+
+vi.mock("../services/provider.js", () => ({
+	isValidProvider: vi.fn(
+		(name: string) => name === "groq" || name === "cerebras" || name === "mistral",
+	),
+	PROVIDER_CONFIGS: {
+		groq: { baseURL: "https://api.groq.com/openai/v1/", defaultModel: "openai/gpt-oss-20b" },
+		cerebras: { baseURL: "https://api.cerebras.ai/v1/", defaultModel: "gpt-oss-120b" },
+		mistral: { baseURL: "https://api.mistral.ai/v1/", defaultModel: "mistral-small" },
+	},
+	PROVIDER_ENV_KEYS: {
+		groq: "GROQ_API_KEY",
+		cerebras: "CEREBRAS_API_KEY",
+		mistral: "MISTRAL_API_KEY",
+	},
+	formatProviderName: vi.fn((name: string) => name.charAt(0).toUpperCase() + name.slice(1)),
 }));
 
 vi.mock("../services/git.js", () => ({
@@ -84,7 +103,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { outro } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
-import { getApiKey, readConfig } from "../services/config.js";
+import { getProviderApiKey, readConfig } from "../services/config.js";
 import type { ChangedFile } from "../services/git.js";
 import { attemptCommit, getHead, getRepoRoot, getStagedDiff, stageFiles } from "../services/git.js";
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js";
@@ -122,7 +141,7 @@ describe("runAutoGroupFlow loop control", () => {
 			excluded: [],
 		});
 		vi.mocked(showGroupingConfirmation).mockResolvedValue(true);
-		vi.mocked(getApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
 		vi.mocked(readConfig).mockResolvedValue({
 			model: "openai/gpt-oss-20b",
 			locale: "en",

@@ -1,7 +1,12 @@
 import { isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
 import { generateCommitMessage } from "../services/ai.js";
-import { getApiKey, readConfig, setConfigValue } from "../services/config.js";
+import {
+	getModelForProvider,
+	getProviderApiKey,
+	readConfig,
+	setConfigValue,
+} from "../services/config.js";
 import {
 	attemptCommit,
 	attemptCommitNoVerify,
@@ -15,6 +20,13 @@ import {
 import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js";
 import { createProgressHandler } from "../services/hook-progress.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
+import {
+	formatProviderName,
+	isValidProvider,
+	PROVIDER_CONFIGS,
+	PROVIDER_ENV_KEYS,
+	type ProviderName,
+} from "../services/provider.js";
 import { showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
 import { type RecoveryResult, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
@@ -37,41 +49,48 @@ export async function runAutoGroupFlow(
 	// Step 1: Filter excluded files
 	const { included, excluded } = filterExcludedFiles(changedFiles);
 
-	// Step 2: Ensure API key
+	// Step 2: Read config and determine provider
+	const config = await readConfig();
+	const resolvedProvider = config.provider ?? "groq";
+	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq";
+
+	// Step 3: Ensure API key
 	try {
-		await getApiKey();
+		await getProviderApiKey(provider);
 		debug("API key found");
 	} catch {
 		debug("No API key found, prompting user");
 		const { text: promptText } = await import("@clack/prompts");
 		const key = await promptText({
-			message: "Enter your Groq API key:",
-			placeholder: "gsk_...",
+			message: `Enter your ${formatProviderName(provider)} API key:`,
+			placeholder: provider === "groq" ? "gsk_..." : "...",
 			validate: (v) => (v?.trim() ? undefined : "API key is required"),
 		});
 		if (isCancel(key)) {
 			outro(dim("Cancelled."));
 			return "cancelled";
 		}
-		await setConfigValue("GROQ_API_KEY", String(key).trim());
+		const configKey = PROVIDER_ENV_KEYS[provider];
+		await setConfigValue(configKey, String(key).trim());
 		debug("API key saved to config");
 	}
 
-	// Step 3: Call grouping service
+	// Step 4: Call grouping service
 	const s = spinner();
 	s.start("Analyzing files...");
-	const config = await readConfig();
-	const apiKey = await getApiKey();
+	const apiKey = await getProviderApiKey(provider);
 	const result = await generateGroups(
 		included,
 		apiKey,
-		config.model,
+		getModelForProvider(config, provider, PROVIDER_CONFIGS[provider].defaultModel),
 		config.timeout ? parseInt(config.timeout, 10) : undefined,
+		provider,
+		config.proxy,
 	);
 	const validatedGroups = validateGroups(result.groups, included);
 	s.stop("Files analyzed");
 
-	// Step 4: Show grouping confirmation (skip in auto mode)
+	// Step 5: Show grouping confirmation (skip in auto mode)
 	if (flags.auto) {
 		debug("Auto mode: skipping grouping confirmation");
 	} else {
@@ -82,7 +101,7 @@ export async function runAutoGroupFlow(
 		}
 	}
 
-	// Step 5: Sequential multi-commit loop
+	// Step 6: Sequential multi-commit loop
 	for (let i = 0; i < validatedGroups.length; i++) {
 		const group = validatedGroups[i];
 		showGroupProgress(i + 1, validatedGroups.length, group.name);
@@ -173,15 +192,20 @@ export async function runAutoGroupFlow(
 
 export async function generateMessage(diff: string, hint?: string): Promise<string> {
 	const config = await readConfig();
-	const apiKey = await getApiKey();
-	debug("Generating message with model:", config.model, "type:", config.type);
+	const resolvedProvider = config.provider ?? "groq";
+	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq";
+	const apiKey = await getProviderApiKey(provider);
+	const model = getModelForProvider(config, provider, PROVIDER_CONFIGS[provider].defaultModel);
+	debug("Generating message with provider:", provider, "model:", model, "type:", config.type);
 
 	return generateCommitMessage(diff, {
 		apiKey,
-		model: config.model,
+		model,
 		type: config.type,
 		timeout: config.timeout ? parseInt(config.timeout, 10) : undefined,
 		hint,
+		provider,
+		proxy: config.proxy,
 	});
 }
 

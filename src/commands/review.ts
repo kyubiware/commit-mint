@@ -1,8 +1,14 @@
 import { intro, isCancel, log, note, outro, select, spinner } from "@clack/prompts";
 import { bold, dim, green, red } from "kolorist";
 import { copyToClipboard } from "../services/clipboard.js";
-import { getApiKey, readConfig } from "../services/config.js";
+import { getModelForProvider, getProviderApiKey, readConfig } from "../services/config.js";
 import { assertGitRepo, getRepoRoot, getStagedDiff, stageAll } from "../services/git.js";
+import {
+	formatProviderName,
+	isValidProvider,
+	PROVIDER_CONFIGS,
+	type ProviderName,
+} from "../services/provider.js";
 import { generateCodeReview } from "../services/review-ai.js";
 import { debug } from "../utils/debug.js";
 
@@ -76,17 +82,23 @@ export async function isOpenCodeAvailable(): Promise<boolean> {
 }
 
 export async function reviewWithGroq(diff: string, files: string[]): Promise<string> {
+	const config = await readConfig();
+	const provider: ProviderName = isValidProvider(config.provider ?? "groq")
+		? (config.provider as ProviderName)
+		: "groq";
+	const apiKey = await getProviderApiKey(provider);
+	const model = getModelForProvider(config, provider, PROVIDER_CONFIGS[provider].defaultModel);
+
 	const s = spinner();
-	s.start("Reviewing with Groq...");
+	s.start(`Reviewing with ${formatProviderName(provider)}...`);
 
 	try {
-		const config = await readConfig();
-		const apiKey = await getApiKey();
-
 		const report = await generateCodeReview(diff, files, {
 			apiKey,
-			model: config.model,
+			model,
 			timeout: config.timeout ? Number.parseInt(config.timeout, 10) : undefined,
+			provider,
+			proxy: config.proxy,
 		});
 
 		s.stop("Review complete");

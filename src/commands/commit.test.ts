@@ -67,6 +67,25 @@ vi.mock("../services/config.js", () => ({
 	getApiKey: vi.fn(),
 	readConfig: vi.fn(),
 	setConfigValue: vi.fn(),
+	getProviderApiKey: vi.fn(),
+	getModelForProvider: vi.fn().mockReturnValue("openai/gpt-oss-20b"),
+}));
+
+vi.mock("../services/provider.js", () => ({
+	isValidProvider: vi.fn(
+		(name: string) => name === "groq" || name === "cerebras" || name === "mistral",
+	),
+	PROVIDER_CONFIGS: {
+		groq: { baseURL: "https://api.groq.com/openai/v1/", defaultModel: "openai/gpt-oss-20b" },
+		cerebras: { baseURL: "https://api.cerebras.ai/v1/", defaultModel: "gpt-oss-120b" },
+		mistral: { baseURL: "https://api.mistral.ai/v1/", defaultModel: "mistral-small" },
+	},
+	PROVIDER_ENV_KEYS: {
+		groq: "GROQ_API_KEY",
+		cerebras: "CEREBRAS_API_KEY",
+		mistral: "MISTRAL_API_KEY",
+	},
+	formatProviderName: vi.fn((name: string) => name.charAt(0).toUpperCase() + name.slice(1)),
 }));
 
 vi.mock("../services/ai.js", () => ({
@@ -89,7 +108,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { text } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
-import { getApiKey, readConfig, setConfigValue } from "../services/config.js";
+import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	attemptCommit,
 	getChangedFiles,
@@ -118,7 +137,12 @@ describe("commitCommand", () => {
 			files: ["src/foo.ts"],
 			diff: "some diff",
 		});
-		vi.mocked(getApiKey).mockRejectedValue(
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			provider: "groq",
+			locale: "en",
+		});
+		vi.mocked(getProviderApiKey).mockRejectedValue(
 			new Error("Please set your Groq API key via `cmint config set GROQ_API_KEY=<your token>`"),
 		);
 
@@ -136,9 +160,14 @@ describe("commitCommand", () => {
 			files: ["src/foo.ts"],
 			diff: "some diff",
 		});
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			provider: "groq",
+			locale: "en",
+		});
 
 		// First call throws (no key), second call succeeds (after prompt+save)
-		vi.mocked(getApiKey)
+		vi.mocked(getProviderApiKey)
 			.mockRejectedValueOnce(new Error("No API key"))
 			.mockResolvedValueOnce("gsk_test_key_123");
 
@@ -168,7 +197,7 @@ describe("commitCommand", () => {
 			files: ["src/foo.ts"],
 			diff: "some diff content",
 		});
-		vi.mocked(getApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
 		vi.mocked(readConfig).mockResolvedValue({
 			model: "openai/gpt-oss-20b",
 			type: "feat",
@@ -187,6 +216,7 @@ describe("commitCommand", () => {
 			type: "feat",
 			timeout: 30000,
 			hint: "refactor auth",
+			provider: "groq",
 		});
 	});
 
@@ -200,7 +230,7 @@ describe("commitCommand", () => {
 			files: ["src/foo.ts"],
 			diff: "some diff",
 		});
-		vi.mocked(getApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
 		vi.mocked(readConfig).mockResolvedValue({
 			model: "openai/gpt-oss-20b",
 
@@ -253,7 +283,7 @@ describe("commitCommand", () => {
 			files: ["src/foo.ts", "src/bar.ts"],
 			diff: "some diff",
 		});
-		vi.mocked(getApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
 		vi.mocked(readConfig).mockResolvedValue({
 			model: "openai/gpt-oss-20b",
 
