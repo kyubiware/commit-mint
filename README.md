@@ -2,17 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@kyubiware/commit-mint.svg)](https://www.npmjs.com/package/@kyubiware/commit-mint)
 
-> commit-mint groups changed files into individual commits, generates commit messages, and cleanly handles commit hook failures. It wraps the entire commit lifecycle — stage, generate, review, attempt, recover, retry — so you never lose a message or stare at raw hook output again.
-
-## Quick Start
-
-```bash
-npm install -g @kyubiware/commit-mint
-```
-
-```bash
-cmint -a
-```
+> Auto-group your changes into clean, conventional commits. AI handles the grouping, messages, and hook failures so you don't have to.
 
 ```
 ┌  commit-mint
@@ -59,41 +49,72 @@ cmint -a
 
 Requires **Node.js 18+**.
 
+## Quick Start
+
+```bash
+npm install -g @kyubiware/commit-mint
 ```
-stage files → generate message → review message → attempt commit → hooks fail?
-                                                                    ├─ copy errors to clipboard
-                                                                    ├─ skip hooks & commit
-                                                                    ├─ re-stage & retry
-                                                                    ├─ edit message
-                                                                    └─ cancel (cached for --retry)
+
+```bash
+cmint -a
 ```
+
+On first run, you'll be prompted for a `GROQ_API_KEY` if it's not set in `~/.commit-mint` or as an environment variable. It's saved for future runs.
+
+## Why commit-mint?
+
+- **Auto-group by intent.** AI reads your diff and groups files into logical commits. No more `feat: update stuff` that bundles unrelated changes.
+- **Zero-prompt auto mode.** `cmint -a` stages, groups, generates messages, and commits without a single prompt. Walk away and come back to clean history.
+- **Hook failures handled in-flow.** When pre-commit hooks fail, you get a parsed error summary and a menu to copy, skip, retry, or edit. No raw stderr dumps.
+- **Message caching on failure.** A failed commit caches its message. Fix the error, run `cmint --retry`, and pick up exactly where you left off.
+- **Review before you commit.** Every message can be accepted, edited, or reviewed with OpenCode before it hits the repo.
+
+## Auto mode (`-a`)
+
+`cmint -a` is the primary way to use commit-mint. It runs the full pipeline with no prompts:
+
+1. AI analyzes all changed files
+2. Files are grouped into logical commits by intent
+3. Each group gets its own AI-generated conventional commit message
+4. Groups are committed sequentially
+5. Hook failures per group trigger the recovery menu
+
+Use this when you want clean history without the ceremony.
+
+## Manual mode
+
+Run `cmint` without flags for the interactive flow:
+
+1. **Staging menu** — stage all, select files, auto-group, or cancel
+2. **File selection** — multi-select specific files if you don't want everything
+3. **Message review** — review the AI-generated message before committing
+4. **Commit attempt** — hooks run, recovery menu appears on failure
+
+If only one file changed, it's staged automatically.
 
 ## Usage
 
 ```bash
-# Normal commit flow (interactive staging if multiple files)
-cmint
-
-# Auto-group files into commits with auto-accepted messages (no prompts)
+# Auto-group and commit everything (no prompts)
 cmint -a
+
+# Normal interactive flow
+cmint
 
 # Skip AI, provide your own message
 cmint -m "feat: add dark mode"
 
-# Pass context hint to AI for better messages
+# Pass context hint for better messages
 cmint -H "refactoring auth module"
-cmint --hint "splitting monolith into services"
 
 # Retry last failed commit (uses cached message)
-cmint --retry
 cmint -r
 
 # Review staged changes with AI
-cmint --review
 cmint -R
 
-# Debug mode — timestamped stderr output
-cmint --debug
+# Debug mode
+cmint -d
 
 # Configuration
 cmint config get GROQ_API_KEY
@@ -101,48 +122,25 @@ cmint config set GROQ_API_KEY=gsk_...
 cmint config set model openai/gpt-oss-20b
 ```
 
-### First run
+| Flag | Description |
+|------|-------------|
+| `-a, --auto` | Auto-group files into commits, accept all messages |
+| `-m, --message` | Provide a commit message directly (skip AI) |
+| `-H, --hint` | Add context hint for AI message generation |
+| `-r, --retry` | Retry the last failed commit |
+| `-R, --review` | Review staged changes with a coding model |
+| `-d, --debug` | Enable debug output |
+| `-h, --help` | Show help |
+| `-v, --version` | Show version |
 
-If no `GROQ_API_KEY` is set in `~/.commit-mint` or `$GROQ_API_KEY`, you'll be prompted to enter one. It's saved to `~/.commit-mint` for future runs.
+## Message review
 
-### Interactive staging
-
-When you have multiple changed files, commit-mint shows an interactive staging menu:
-
-- **Stage all files** — auto-stage everything
-- **Select files** — multi-select specific files to stage
-- **Auto-group into commits** — AI groups files into logical commits (see below)
-- **Cancel**
-
-If only one file has changed, it's staged automatically.
-
-### Auto-group
-
-The auto-group feature uses AI to analyze your changed files and group them into logical, cohesive commits. Each group is committed separately with its own AI-generated message.
-
-```
-1. AI analyzes changed files → proposes groups (name, description, files)
-2. You confirm or cancel the groupings
-3. For each group: stage → generate message → review → commit
-4. Hook failures show the recovery menu per-group
-```
-
-Select "Auto-group into commits" from the staging menu, or use `cmint --auto` / `cmint -a` to auto-group and auto-accept all commit messages with no prompts.
-
-### Message review
-
-Before every commit, you can review the generated message:
+Before every commit, choose what to do with the generated message:
 
 - **Use as-is** — accept the AI-generated message
 - **Edit** — modify the message in a prompt
-- **Review with OpenCode** — run a code review on your staged changes before committing
+- **Review with OpenCode** — run a code review on staged changes before committing
 - **Cancel** — exit (message is cached for `--retry`)
-
-### Code review
-
-Use `cmint --review` or `cmint -R` to review staged changes without committing. commit-mint checks for [OpenCode](https://github.com/opencode-ai/opencode) first — if available, it uses OpenCode for the review. Otherwise, it falls back to the Groq API.
-
-The review looks for bugs, security issues, performance problems, code quality, and edge cases. Results are shown in a structured report, with an option to copy findings to clipboard.
 
 ## Recovery menu
 
@@ -167,23 +165,17 @@ When a pre-commit hook blocks your commit, commit-mint parses the error output a
 
 | Option | What it does |
 |--------|-------------|
-| **Copy error report** | Copies parsed, clean error output to clipboard — paste it into another terminal for an AI agent to fix |
-| **Skip hooks** | Re-runs `git commit --no-verify` with the same message — for when hooks are wrong or you'll fix later |
-| **Re-stage & retry** | Runs `git add -A` again (picks up fixes made in another terminal), then retries the commit |
+| **Copy error report** | Copies parsed, clean error output to clipboard |
+| **Skip hooks** | Re-runs `git commit --no-verify` with the same message |
+| **Re-stage & retry** | Runs `git add -A` again, then retries the commit |
 | **Edit message** | Opens a prompt to modify the commit message, then retries |
 | **Cancel** | Exits. Commit message is cached for `cmint --retry` |
 
-### Supported hook tools
+commit-mint parses errors from **lint-staged**, **biome**, **TypeScript** (`tsc`), **vitest** / **jest**, and **ESLint**. Unrecognized output falls back to raw stderr.
 
-commit-mint parses errors from:
+## Code review
 
-- **lint-staged** — task failure detection
-- **biome** — lint/format errors with file:line:col
-- **TypeScript** (`tsc`) — type errors with TS error codes
-- **vitest** / **jest** — test failure detection
-- **ESLint** — lint error/warning detection
-
-Unrecognized error output is shown as raw fallback.
+Run `cmint --review` or `cmint -R` to review staged changes without committing. commit-mint checks for [OpenCode](https://github.com/opencode-ai/opencode) first, then falls back to Groq API. The review covers bugs, security issues, performance problems, and edge cases.
 
 ## Configuration
 
@@ -234,7 +226,7 @@ cmint --help
 
 ## Retry persistence
 
-Failed commit messages are cached to `~/.cache/commit-mint/<repo-hash>.json`. Running `cmint --retry` reuses the last message without regenerating — useful after fixing errors flagged by the recovery menu.
+Failed commit messages are cached to `~/.cache/commit-mint/<repo-hash>.json`. Running `cmint --retry` reuses the last message without regenerating. Fix errors in another terminal, come back, and retry.
 
 ## How it works
 
@@ -263,18 +255,6 @@ commit-mint/
 │       ├── cache.ts        # Commit message persistence at ~/.cache/commit-mint/
 │       └── debug.ts        # Timestamped debug logging to stderr
 ```
-
-## Key differentiators
-
-1. **Hook error parsing** — No other commit tool parses lint-staged/biome/eslint output into a clean summary
-2. **Interactive recovery menu** — Copy/skip/retry/edit as an in-flow choice, not a manual post-mortem
-3. **Message caching on failure** — `--retry` restores the last message without regenerating
-4. **Re-stage & retry loop** — Fix errors in another terminal, come back, hit "re-stage & retry"
-5. **Auto-group** — AI groups changed files into logical commits, each committed separately
-6. **In-flow code review** — Review staged changes with OpenCode or Groq before committing
-7. **Message review step** — Accept, edit, or review the AI-generated message before committing
-8. **Post-commit summary** — Shows which hook tools passed/failed after every successful commit
-9. **Clipboard integration** — Copy error report and hand it to an AI coding agent for fixes
 
 ## Requirements
 
