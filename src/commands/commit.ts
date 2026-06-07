@@ -83,6 +83,9 @@ export async function commitCommand(flags: CommitFlags) {
 		process.exit(1);
 	}
 
+	// Refresh file list after staging so staged state is accurate
+	changedFiles = await getChangedFiles();
+
 	// Run user-defined pre-commit checks (before AI message generation)
 	await runPreCommitChecks(changedFiles, flags.noCheck);
 
