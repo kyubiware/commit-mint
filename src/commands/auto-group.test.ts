@@ -87,6 +87,11 @@ vi.mock("../ui/grouping.js", () => ({
 
 vi.mock("../ui/menu.js", () => ({
 	showRecoveryMenu: vi.fn(),
+	showCheckFailureMenu: vi.fn(),
+}));
+
+vi.mock("../services/checks.js", () => ({
+	runAllChecks: vi.fn(),
 }));
 
 vi.mock("../ui/review-message.js", () => ({
@@ -103,13 +108,14 @@ vi.mock("../utils/debug.js", () => ({
 
 import { outro } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
+import { runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig } from "../services/config.js";
 import type { ChangedFile } from "../services/git.js";
 import { attemptCommit, getHead, getRepoRoot, getStagedDiff, stageFiles } from "../services/git.js";
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import { showGroupingConfirmation } from "../ui/grouping.js";
-import { showRecoveryMenu } from "../ui/menu.js";
+import { showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 
 describe("runAutoGroupFlow loop control", () => {
@@ -153,6 +159,8 @@ describe("runAutoGroupFlow loop control", () => {
 		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg);
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseToolChecks).mockReturnValue([]);
+		// Default: checks pass (no-op) so existing tests proceed to grouping
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 	}
 
 	it("recovery success → continues to next group", async () => {
@@ -206,5 +214,94 @@ describe("runAutoGroupFlow loop control", () => {
 
 		expect(attemptCommit).toHaveBeenCalledTimes(1);
 		expect(outro).not.toHaveBeenCalledWith(expect.stringContaining("All groups committed."));
+	});
+});
+
+describe("runAutoGroupFlow check integration", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	const changedFiles: ChangedFile[] = [
+		{ status: "M", path: "src/a.ts", staged: true },
+		{ status: "M", path: "src/b.ts", staged: true },
+	];
+
+	const flags: CommitFlags = { retry: false, auto: false };
+
+	const twoGroups = [
+		{ name: "Group 1", description: "desc", files: ["src/a.ts"] },
+		{ name: "Group 2", description: "desc", files: ["src/b.ts"] },
+	];
+
+	function setupCheckMocks() {
+		vi.mocked(filterExcludedFiles).mockReturnValue({
+			included: changedFiles,
+			excluded: [],
+		});
+		vi.mocked(generateGroups).mockResolvedValue({
+			groups: twoGroups as { name: string; description: string; files: string[] }[],
+			excluded: [],
+		});
+		vi.mocked(showGroupingConfirmation).mockResolvedValue(true);
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		});
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test message");
+		vi.mocked(getStagedDiff).mockResolvedValue({ files: ["src/a.ts"], diff: "diff" });
+		vi.mocked(getHead).mockResolvedValue("abc123");
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg);
+		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
+		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+	}
+
+	it("checks run once upfront with all files, not per-group", async () => {
+		setupCheckMocks();
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+
+		const result = await runAutoGroupFlow(changedFiles, flags);
+
+		// Check phase ran exactly once with all included file paths
+		expect(runAllChecks).toHaveBeenCalledTimes(1);
+		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/a.ts", "src/b.ts"], 60000);
+		// Recovery menu for checks was NOT shown (checks passed)
+		expect(showCheckFailureMenu).not.toHaveBeenCalled();
+		// Both groups committed normally
+		expect(attemptCommit).toHaveBeenCalledTimes(2);
+		expect(result).toBe("committed");
+	});
+
+	it("checks fail → recovery menu → user cancels → no groups committed", async () => {
+		setupCheckMocks();
+		vi.mocked(runAllChecks).mockResolvedValue({
+			ok: false,
+			results: [
+				{
+					ok: false,
+					tool: "eslint",
+					command: "eslint src/a.ts",
+					stdout: "",
+					stderr: "lint error",
+					files: ["src/a.ts", "src/b.ts"],
+				},
+			],
+		});
+		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
+
+		const result = await runAutoGroupFlow(changedFiles, flags);
+
+		// Recovery menu was shown with parsed check errors
+		expect(showCheckFailureMenu).toHaveBeenCalledWith(
+			[expect.objectContaining({ tool: "eslint", message: "lint error" })],
+			expect.stringContaining("[eslint]"),
+		);
+		// Flow stopped before any commit
+		expect(result).toBe("cancelled");
+		expect(attemptCommit).not.toHaveBeenCalled();
+		expect(stageFiles).not.toHaveBeenCalled();
 	});
 });

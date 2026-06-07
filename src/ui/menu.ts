@@ -265,3 +265,67 @@ export async function showRecoveryMenu(
 		}
 	}
 }
+
+export async function showCheckFailureMenu(
+	errors: HookError[],
+	rawStderr: string,
+): Promise<"skipped" | "cancelled"> {
+	debug("showCheckFailureMenu: %d errors", errors.length);
+
+	let clipboardCopied = false;
+
+	p.note(
+		errors.map((e) => `  ${red("•")} [${e.tool}] ${e.message}`).join("\n"),
+		red("Pre-commit check failed"),
+	);
+
+	while (true) {
+		const choice = await p.select({
+			message: "What do you want to do?",
+			options: [
+				{
+					label: clipboardCopied
+						? `${green("✓")} Copy error report to clipboard`
+						: "Copy error report to clipboard",
+					value: "copy",
+				},
+				{
+					label: "Skip checks and commit",
+					value: "skip",
+				},
+				{
+					label: "Cancel",
+					value: "cancel",
+				},
+			],
+		});
+
+		if (p.isCancel(choice)) {
+			debug("showCheckFailureMenu: user cancelled");
+			return "cancelled";
+		}
+
+		debug("showCheckFailureMenu: user chose %s", choice);
+
+		switch (choice) {
+			case "copy": {
+				const ok = await copyToClipboard(rawStderr);
+				if (ok) {
+					clipboardCopied = true;
+					p.log.step(green("Copied to clipboard."));
+				} else {
+					p.log.warn(red("No clipboard tool found. Install xclip, wl-copy, or xsel."));
+				}
+				continue;
+			}
+			case "skip": {
+				p.log.info("Skipping checks and proceeding with commit...");
+				return "skipped";
+			}
+			case "cancel": {
+				p.outro(dim("Cancelled."));
+				return "cancelled";
+			}
+		}
+	}
+}

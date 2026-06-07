@@ -1,5 +1,6 @@
 import { intro, isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
+import { runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	assertGitRepo,
@@ -21,7 +22,7 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js";
-import { showRecoveryMenu, showStagingMenu } from "../ui/menu.js";
+import { showCheckFailureMenu, showRecoveryMenu, showStagingMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { loadCachedCommit, saveCachedCommit } from "../utils/cache.js";
 import { debug } from "../utils/debug.js";
@@ -196,6 +197,38 @@ export async function commitCommand(flags: CommitFlags) {
 		debug("Staging error:", msg);
 		outro(red(`Failed to stage files: ${msg}`));
 		process.exit(1);
+	}
+
+	// Run user-defined pre-commit checks (before AI message generation)
+	if (!flags.noCheck) {
+		const { getRepoRoot: getCheckRoot } = await import("../services/git.js");
+		const checkRoot = await getCheckRoot();
+		const stagedFileList = changedFiles.filter((f) => f.staged).map((f) => f.path);
+		if (stagedFileList.length > 0) {
+			debug("Running user checks on %d staged files...", stagedFileList.length);
+			const checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
+			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
+
+			if (!checkResults.ok) {
+				// Convert CheckResult[] to HookError[] for display
+				const checkErrors = checkResults.results
+					.filter((r) => !r.ok)
+					.map((r) => ({
+						tool: r.tool,
+						message: r.stderr || `Check command failed: ${r.command}`,
+						raw: r.stderr,
+					}));
+				const rawStderr = checkResults.results
+					.filter((r) => !r.ok)
+					.map((r) => `[${r.tool}] ${r.stderr}`)
+					.join("\n");
+				const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
+				if (menuResult === "cancelled") {
+					process.exit(1);
+				}
+				// "skipped" → continue to message generation
+			}
+		}
 	}
 
 	// Get diff for AI

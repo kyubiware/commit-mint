@@ -1,6 +1,7 @@
 import { isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
 import { generateCommitMessage } from "../services/ai.js";
+import { runAllChecks } from "../services/checks.js";
 import {
 	getModelForProvider,
 	getProviderApiKey,
@@ -28,7 +29,7 @@ import {
 	type ProviderName,
 } from "../services/provider.js";
 import { showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
-import { type RecoveryResult, showRecoveryMenu } from "../ui/menu.js";
+import { type RecoveryResult, showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { saveCachedCommit } from "../utils/cache.js";
 import { debug } from "../utils/debug.js";
@@ -38,6 +39,7 @@ export interface CommitFlags {
 	auto: boolean;
 	message?: string;
 	hint?: string;
+	noCheck?: boolean;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-step auto-group flow with sequential commits, review, and recovery
@@ -48,6 +50,35 @@ export async function runAutoGroupFlow(
 ): Promise<RecoveryResult> {
 	// Step 1: Filter excluded files
 	const { included, excluded } = filterExcludedFiles(changedFiles);
+
+	// Run user-defined pre-commit checks upfront on all files (before AI grouping)
+	if (!flags.noCheck) {
+		const { getRepoRoot } = await import("../services/git.js");
+		const repoRoot = await getRepoRoot();
+		const allFiles = included.map((f) => f.path);
+		debug("Running user checks on %d files...", allFiles.length);
+		const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
+		debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
+
+		if (!checkResults.ok) {
+			const checkErrors = checkResults.results
+				.filter((r) => !r.ok)
+				.map((r) => ({
+					tool: r.tool,
+					message: r.stderr || `Check command failed: ${r.command}`,
+					raw: r.stderr,
+				}));
+			const rawStderr = checkResults.results
+				.filter((r) => !r.ok)
+				.map((r) => `[${r.tool}] ${r.stderr}`)
+				.join("\n");
+			const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
+			if (menuResult === "cancelled") {
+				return "cancelled";
+			}
+			// "skipped" → continue to grouping and commits
+		}
+	}
 
 	// Step 2: Read config and determine provider
 	const config = await readConfig();

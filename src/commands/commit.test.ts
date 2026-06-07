@@ -56,6 +56,11 @@ vi.mock("../services/lint-staged.js", () => ({
 vi.mock("../ui/menu.js", () => ({
 	showRecoveryMenu: vi.fn(),
 	showStagingMenu: vi.fn(),
+	showCheckFailureMenu: vi.fn(),
+}));
+
+vi.mock("../services/checks.js", () => ({
+	runAllChecks: vi.fn(),
 }));
 
 vi.mock("../utils/cache.js", () => ({
@@ -108,6 +113,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { text } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
+import { runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	attemptCommit,
@@ -119,12 +125,14 @@ import {
 	stageAll,
 	stageFiles,
 } from "../services/git.js";
-import { showStagingMenu } from "../ui/menu.js";
+import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
 import { saveCachedCommit } from "../utils/cache.js";
 
 describe("commitCommand", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Default: checks pass (no-op) so existing tests reach message generation
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 	});
 
 	it("handles errors from generateMessage without unhandled rejection", async () => {
@@ -303,5 +311,128 @@ describe("commitCommand", () => {
 			false,
 		);
 		expect(stageAll).toHaveBeenCalled();
+	});
+});
+
+describe("commitCommand check integration", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Default: checks pass (no-op) so most tests reach message generation
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+	});
+
+	function setupBaseFlow() {
+		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts");
+		vi.mocked(getChangedFiles).mockResolvedValue([
+			{ status: "M", path: "src/foo.ts", staged: true },
+		]);
+		vi.mocked(stageFiles).mockResolvedValue(undefined);
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["src/foo.ts"],
+			diff: "some diff",
+		});
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		});
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test commit");
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456");
+	}
+
+	it("checks run and pass → message generation proceeds", async () => {
+		setupBaseFlow();
+
+		await commitCommand({ retry: false, auto: false });
+
+		// runAllChecks was called with the staged file list
+		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000);
+		// showCheckFailureMenu was NOT shown (checks passed)
+		expect(showCheckFailureMenu).not.toHaveBeenCalled();
+		// Message generation still proceeded
+		expect(generateCommitMessage).toHaveBeenCalled();
+		// Commit succeeded
+		expect(attemptCommit).toHaveBeenCalled();
+	});
+
+	it("checks fail → recovery menu shown → user skips → message generation proceeds", async () => {
+		setupBaseFlow();
+		vi.mocked(runAllChecks).mockResolvedValue({
+			ok: false,
+			results: [
+				{
+					ok: false,
+					tool: "eslint",
+					command: "eslint src/foo.ts",
+					stdout: "",
+					stderr: "lint error",
+					files: ["src/foo.ts"],
+				},
+			],
+		});
+		vi.mocked(showCheckFailureMenu).mockResolvedValue("skipped");
+
+		await commitCommand({ retry: false, auto: false });
+
+		// Recovery menu was shown with parsed check errors
+		expect(showCheckFailureMenu).toHaveBeenCalledWith(
+			[expect.objectContaining({ tool: "eslint", message: "lint error" })],
+			expect.stringContaining("[eslint]"),
+		);
+		// User skipped → flow continued to message generation
+		expect(generateCommitMessage).toHaveBeenCalled();
+		// Commit still happened
+		expect(attemptCommit).toHaveBeenCalled();
+	});
+
+	it("checks fail → recovery menu shown → user cancels → process.exit(1)", async () => {
+		setupBaseFlow();
+		vi.mocked(runAllChecks).mockResolvedValue({
+			ok: false,
+			results: [
+				{
+					ok: false,
+					tool: "eslint",
+					command: "eslint src/foo.ts",
+					stdout: "",
+					stderr: "lint error",
+					files: ["src/foo.ts"],
+				},
+			],
+		});
+		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
+
+		// Spy on process.exit — throw so the test stops where the real process would
+		const exitSpy = vi.spyOn(process, "exit").mockImplementation((code) => {
+			throw new Error(`process.exit called with ${code}`);
+		});
+
+		await expect(commitCommand({ retry: false, auto: false })).rejects.toThrow(
+			"process.exit called with 1",
+		);
+
+		expect(showCheckFailureMenu).toHaveBeenCalled();
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		// Flow stopped — no message generation, no commit
+		expect(generateCommitMessage).not.toHaveBeenCalled();
+		expect(attemptCommit).not.toHaveBeenCalled();
+
+		exitSpy.mockRestore();
+	});
+
+	it("--no-check → checks skipped entirely", async () => {
+		setupBaseFlow();
+
+		await commitCommand({ retry: false, auto: false, noCheck: true });
+
+		// runAllChecks was NEVER called
+		expect(runAllChecks).not.toHaveBeenCalled();
+		// Recovery menu not shown
+		expect(showCheckFailureMenu).not.toHaveBeenCalled();
+		// Flow continued normally
+		expect(generateCommitMessage).toHaveBeenCalled();
+		expect(attemptCommit).toHaveBeenCalled();
 	});
 });

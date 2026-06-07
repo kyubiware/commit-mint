@@ -49,6 +49,12 @@ cli(
 				alias: "d",
 				default: false,
 			},
+			noCheck: {
+				type: Boolean,
+				description: "Skip user-defined pre-commit checks",
+				alias: "N",
+				default: false,
+			},
 		},
 		commands: [
 			command({ name: "config" }, async () => {
