@@ -12,11 +12,12 @@ export interface StagingChoice {
 	all: boolean; // whether user chose "Stage all"
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Staging menu with conditional options + multiselect fallback
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Staging menu with file list display + multiselect fallback
 export async function showStagingMenu(
 	files: ChangedFile[],
 	hasLintStaged: boolean,
-): Promise<StagingChoice | "autogroup" | "lint-staged" | null> {
+): Promise<StagingChoice | "autogroup" | "lint-staged" | "staged" | null> {
 	debug("showStagingMenu: %d files", files.length);
 
 	// Build status labels with kolorist colors
@@ -69,6 +70,15 @@ export async function showStagingMenu(
 				value: "autogroup",
 				hint: "LLM groups files into logical commits",
 			},
+			...(stagedFiles.length > 0
+				? [
+						{
+							label: "Commit staged files only",
+							value: "staged" as const,
+							hint: `${stagedFiles.length} file${stagedFiles.length !== 1 ? "s" : ""} already staged`,
+						},
+					]
+				: []),
 			{
 				label: "Stage all files",
 				value: "all",
@@ -98,6 +108,10 @@ export async function showStagingMenu(
 
 	if (choice === "lint-staged") {
 		return "lint-staged";
+	}
+
+	if (choice === "staged") {
+		return "staged";
 	}
 
 	if (choice === "all") {

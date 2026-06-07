@@ -128,6 +128,7 @@ export async function commitCommand(flags: CommitFlags) {
 			let stagingResult: Awaited<ReturnType<typeof showStagingMenu>> = null;
 			let filesToStage: string[] = [];
 			let stageAllFlag = false;
+			let skipStaging = false;
 
 			while (true) {
 				stagingResult = await showStagingMenu(changedFiles, lintStagedAvailable);
@@ -163,6 +164,12 @@ export async function commitCommand(flags: CommitFlags) {
 					continue;
 				}
 
+				if (stagingResult === "staged") {
+					// Files already staged — skip staging step
+					skipStaging = true;
+					break;
+				}
+
 				if (!stagingResult) {
 					outro(dim("Cancelled."));
 					return;
@@ -173,13 +180,15 @@ export async function commitCommand(flags: CommitFlags) {
 				break;
 			}
 
-			s.start(`Staging ${filesToStage.length} file${filesToStage.length !== 1 ? "s" : ""}...`);
-			if (stageAllFlag) {
-				await stageAll();
-			} else {
-				await stageFiles(filesToStage);
+			if (!skipStaging) {
+				s.start(`Staging ${filesToStage.length} file${filesToStage.length !== 1 ? "s" : ""}...`);
+				if (stageAllFlag) {
+					await stageAll();
+				} else {
+					await stageFiles(filesToStage);
+				}
+				s.stop("Files staged");
 			}
-			s.stop("Files staged");
 		}
 	} catch (err) {
 		s.stop(red("Staging failed."));
