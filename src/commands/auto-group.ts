@@ -55,7 +55,7 @@ export async function runAutoGroupFlow(
 	if (!flags.noCheck) {
 		const { getRepoRoot } = await import("../services/git.js");
 		const repoRoot = await getRepoRoot();
-		const allFiles = included.map((f) => f.path);
+		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path);
 		debug("Running user checks on %d files...", allFiles.length);
 		const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
 		debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);

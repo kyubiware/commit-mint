@@ -1,6 +1,6 @@
 import { intro, isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
-import { runAllChecks } from "../services/checks.js";
+import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	assertGitRepo,
@@ -15,7 +15,6 @@ import {
 } from "../services/git.js";
 import { createProgressHandler } from "../services/hook-progress.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
-import { hasLintStagedConfig, runLintStaged } from "../services/lint-staged.js";
 import {
 	formatProviderName,
 	isValidProvider,
@@ -120,11 +119,11 @@ export async function commitCommand(flags: CommitFlags) {
 			await stageFiles([changedFiles[0].path]);
 			s.stop("File staged");
 		} else {
-			// Multiple files: show interactive staging menu (loops for lint-staged)
+			// Multiple files: show interactive staging menu (loops for checks)
 			const { getRepoRoot } = await import("../services/git.js");
 			const repoRoot = await getRepoRoot();
-			const lintStagedAvailable = await hasLintStagedConfig(repoRoot);
-			debug("lint-staged available:", lintStagedAvailable);
+			const checksAvailable = await detectConfig(repoRoot);
+			debug("checks available:", checksAvailable);
 
 			let stagingResult: Awaited<ReturnType<typeof showStagingMenu>> = null;
 			let filesToStage: string[] = [];
@@ -132,7 +131,7 @@ export async function commitCommand(flags: CommitFlags) {
 			let skipStaging = false;
 
 			while (true) {
-				stagingResult = await showStagingMenu(changedFiles, lintStagedAvailable);
+				stagingResult = await showStagingMenu(changedFiles, checksAvailable);
 
 				if (stagingResult === "autogroup") {
 					if (flags.message) {
@@ -146,21 +145,21 @@ export async function commitCommand(flags: CommitFlags) {
 					return;
 				}
 
-				if (stagingResult === "lint-staged") {
+				if (stagingResult === "checks") {
 					await stageAll();
-					const lsSpinner = spinner();
-					lsSpinner.start("Running lint-staged checks...");
-					const lsResult = await runLintStaged();
-					if (lsResult.ok) {
-						lsSpinner.stop("All lint-staged checks passed");
-						if (lsResult.stdout.trim()) {
-							log.info(dim(lsResult.stdout.trim()));
-						}
+					const ckSpinner = spinner();
+					ckSpinner.start("Running checks...");
+					const allFiles = changedFiles.filter((f) => f.status !== "D").map((f) => f.path);
+					const ckResult = await runAllChecks(repoRoot, allFiles, 60000);
+					if (ckResult.ok) {
+						ckSpinner.stop("All checks passed");
+						for (const r of ckResult.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
 					} else {
-						lsSpinner.stop("Lint-staged checks failed");
-						log.info(lsResult.stderr?.trim() || lsResult.stdout?.trim() || "Unknown error");
+						const failed = ckResult.results.filter((r) => !r.ok);
+						ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
+						for (const r of failed)
+							log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`);
 					}
-					// Refresh changed files list after lint-staged may have modified files
 					changedFiles = await getChangedFiles();
 					continue;
 				}
@@ -203,7 +202,9 @@ export async function commitCommand(flags: CommitFlags) {
 	if (!flags.noCheck) {
 		const { getRepoRoot: getCheckRoot } = await import("../services/git.js");
 		const checkRoot = await getCheckRoot();
-		const stagedFileList = changedFiles.filter((f) => f.staged).map((f) => f.path);
+		const stagedFileList = changedFiles
+			.filter((f) => f.staged && f.status !== "D")
+			.map((f) => f.path);
 		if (stagedFileList.length > 0) {
 			debug("Running user checks on %d staged files...", stagedFileList.length);
 			const checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);

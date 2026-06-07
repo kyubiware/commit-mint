@@ -48,9 +48,9 @@ vi.mock("../services/hooks.js", () => ({
 	parseToolChecks: vi.fn(() => []),
 }));
 
-vi.mock("../services/lint-staged.js", () => ({
-	hasLintStagedConfig: vi.fn(() => Promise.resolve(false)),
-	runLintStaged: vi.fn(),
+vi.mock("../services/checks.js", () => ({
+	runAllChecks: vi.fn(),
+	detectConfig: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock("../ui/menu.js", () => ({
@@ -61,6 +61,7 @@ vi.mock("../ui/menu.js", () => ({
 
 vi.mock("../services/checks.js", () => ({
 	runAllChecks: vi.fn(),
+	detectConfig: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock("../utils/cache.js", () => ({
@@ -276,11 +277,15 @@ describe("commitCommand", () => {
 	});
 
 	it("shows staging menu when multiple files changed and --auto is not set", async () => {
+		const _exitSpy = vi.spyOn(process, "exit").mockImplementation((code) => {
+			throw new Error(`process.exit called with ${code}`);
+		});
 		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts\n?? src/bar.ts");
 		vi.mocked(getChangedFiles).mockResolvedValue([
 			{ status: "M", path: "src/foo.ts", staged: true },
 			{ status: "??", path: "src/bar.ts", staged: false },
 		]);
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
 		// User selects "Stage all" in the menu
 		vi.mocked(showStagingMenu).mockResolvedValue({
 			files: ["src/foo.ts", "src/bar.ts"],
@@ -355,6 +360,26 @@ describe("commitCommand check integration", () => {
 		expect(generateCommitMessage).toHaveBeenCalled();
 		// Commit succeeded
 		expect(attemptCommit).toHaveBeenCalled();
+	});
+
+	it("excludes deleted files from check file list", async () => {
+		setupBaseFlow();
+		// 2 files to take multi-file path, staging menu auto-stages all
+		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts\nD  src/deleted.ts");
+		vi.mocked(getChangedFiles).mockResolvedValue([
+			{ status: "M", path: "src/foo.ts", staged: true },
+			{ status: "D", path: "src/deleted.ts", staged: true },
+		]);
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts", "src/deleted.ts"],
+			all: true,
+		});
+		vi.mocked(stageAll).mockResolvedValue(undefined);
+
+		await commitCommand({ retry: false, auto: false });
+
+		// Deleted file should NOT be in the check list
+		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000);
 	});
 
 	it("checks fail → recovery menu shown → user skips → message generation proceeds", async () => {
