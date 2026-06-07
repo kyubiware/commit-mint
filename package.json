@@ -52,7 +52,8 @@
 		"execa": "^9.6.0",
 		"groq-sdk": "^0.32.0",
 		"ini": "^5.0.0",
-		"kolorist": "^1.8.0"
+		"kolorist": "^1.8.0",
+		"picomatch": "^4.0.4"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
