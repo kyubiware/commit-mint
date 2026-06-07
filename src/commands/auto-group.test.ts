@@ -341,10 +341,7 @@ describe("runAutoGroupFlow excluded files handling", () => {
 	it("commits excluded-only files with hardcoded message instead of silently dropping them", async () => {
 		setupExcludedOnlyMocks();
 
-		const result = await runAutoGroupFlow(
-			[{ status: "M", path: "bun.lock", staged: true }],
-			flags,
-		);
+		const result = await runAutoGroupFlow([{ status: "M", path: "bun.lock", staged: true }], flags);
 
 		// Should have staged the excluded file and committed it
 		expect(resetStaging).toHaveBeenCalled();
@@ -406,10 +403,7 @@ describe("runAutoGroupFlow excluded files handling", () => {
 		vi.mocked(parseToolChecks).mockReturnValue([]);
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 
-		await runAutoGroupFlow(
-			[{ status: "M", path: "dist/bundle.js", staged: true }],
-			flags,
-		);
+		await runAutoGroupFlow([{ status: "M", path: "dist/bundle.js", staged: true }], flags);
 
 		expect(attemptCommit).toHaveBeenCalledWith("chore: update generated files");
 	});

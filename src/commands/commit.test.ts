@@ -50,7 +50,7 @@ vi.mock("../services/hooks.js", () => ({
 
 vi.mock("../services/checks.js", () => ({
 	runAllChecks: vi.fn(),
-		detectConfig: vi.fn(() => Promise.resolve(null)),
+	detectConfig: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock("../ui/menu.js", () => ({
@@ -61,7 +61,7 @@ vi.mock("../ui/menu.js", () => ({
 
 vi.mock("../services/checks.js", () => ({
 	runAllChecks: vi.fn(),
-		detectConfig: vi.fn(() => Promise.resolve(null)),
+	detectConfig: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock("../utils/cache.js", () => ({

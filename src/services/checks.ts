@@ -153,6 +153,52 @@ export function matchFiles(pattern: string, files: string[]): string[] {
  * File paths containing spaces are wrapped in double quotes.
  * If no files are provided, the base command is returned as-is.
  */
+export function buildCommand(command: string, files: string[]): string {
+	if (files.length === 0) return command;
+	const quotedFiles = files.map((f) => (f.includes(" ") ? `"${f}"` : f));
+	return `${command} ${quotedFiles.join(" ")}`;
+}
+
+/**
+ * Resolve config commands for a glob entry into an array of command strings.
+ * Function commands receive matched filenames; string commands are used as-is.
+ */
+function resolveCommands(
+	commands: string | string[] | ((filenames: string[]) => string | string[]),
+	matchedFiles: string[],
+): string[] {
+	const isFunction = typeof commands === "function";
+	if (isFunction) {
+		const resolved = (commands as (files: string[]) => string | string[])(matchedFiles);
+		return Array.isArray(resolved) ? resolved : [resolved];
+	}
+	return Array.isArray(commands) ? commands : [commands as string];
+}
+
+/**
+ * Run resolved commands for a single glob entry, appending results.
+ * Returns false if any command fails (for fail-fast signaling).
+ */
+async function runCommandsForGlob(
+	cmds: string[],
+	isFunction: boolean,
+	matchedFiles: string[],
+	timeout: number,
+	results: CheckResult[],
+): Promise<boolean> {
+	for (const cmd of cmds) {
+		const fullCommand = isFunction ? cmd : buildCommand(cmd, matchedFiles);
+		debug("runCommandsForGlob: running '%s'", fullCommand);
+		const result = await runCommand(fullCommand, timeout);
+		results.push({ ...result, files: matchedFiles });
+		if (!result.ok) {
+			debug("runCommandsForGlob: check failed, stopping (fail-fast)");
+			return false;
+		}
+	}
+	return true;
+}
+
 /**
  * Run all user-defined checks from .cmintrc against staged files.
  * Returns a no-op result when no config exists.
@@ -165,62 +211,33 @@ export async function runAllChecks(
 ): Promise<CheckResults> {
 	debug("runAllChecks: %d staged files, checking for config in %s", stagedFiles.length, repoRoot);
 
-	// No-op when no config file exists
 	const configPath = await detectConfig(repoRoot);
 	if (!configPath) {
 		debug("runAllChecks: no config found, skipping checks");
 		return { ok: true, results: [] };
 	}
 
-	// Load config
 	const config = await loadConfig(repoRoot);
 	debug("runAllChecks: loaded config with %d patterns", Object.keys(config).length);
 
 	const results: CheckResult[] = [];
 
-	// Process each glob → commands entry
 	for (const [glob, commands] of Object.entries(config)) {
 		const matchedFiles = matchFiles(glob, stagedFiles);
 		const isFunction = typeof commands === "function";
 
-		// Function commands always run (even with no matches); string commands skip when no matches
 		if (matchedFiles.length === 0 && !isFunction) {
 			debug("runAllChecks: no files matched pattern '%s'", glob);
 			continue;
 		}
 		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length);
 
-		// Resolve commands: function receives matched filenames, string used as-is
-		let cmds: string[];
-		if (isFunction) {
-			const resolved = (commands as (files: string[]) => string | string[])(matchedFiles);
-			cmds = Array.isArray(resolved) ? resolved : [resolved];
-		} else {
-			cmds = Array.isArray(commands) ? commands : [commands as string];
-		}
-
-		for (const cmd of cmds) {
-			const fullCommand = isFunction ? cmd : buildCommand(cmd, matchedFiles);
-			debug("runAllChecks: running '%s'", fullCommand);
-			const result = await runCommand(fullCommand, timeout);
-			// Attach matched files to result
-			results.push({ ...result, files: matchedFiles });
-
-			// Fail-fast: stop on first error
-			if (!result.ok) {
-				debug("runAllChecks: check failed, stopping (fail-fast)");
-				return { ok: false, results };
-			}
-		}
+		const cmds = resolveCommands(commands, matchedFiles);
+		const ok = await runCommandsForGlob(cmds, isFunction, matchedFiles, timeout, results);
+		if (!ok) return { ok: false, results };
 	}
 
 	const ok = results.every((r) => r.ok);
 	debug("runAllChecks: complete \u2014 ok=%s, %d results", ok, results.length);
 	return { ok, results };
-}
-
-export function buildCommand(command: string, files: string[]): string {
-	if (files.length === 0) return command;
-	const quotedFiles = files.map((f) => (f.includes(" ") ? `"${f}"` : f));
-	return `${command} ${quotedFiles.join(" ")}`;
 }

@@ -159,9 +159,7 @@ describe("detectConfig", () => {
 
 	it("returns config path when .cmintrc.js exists (fallback)", async () => {
 		// .cmintrc.ts fails, .cmintrc.js succeeds
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		await expect(detectConfig("/fake/repo")).resolves.toBe("/fake/repo/.cmintrc.js");
 	});
 
@@ -203,19 +201,14 @@ describe("loadConfig", () => {
 		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
 		await writeFile(join(tmpDir, ".cmintrc.js"), `export default { "*.ts": "biome check" };`);
 		// .cmintrc.ts doesn't exist, .cmintrc.js does — mock access accordingly
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		const config = await loadConfig(tmpDir);
 		expect(config["*.ts"]).toBe("biome check");
 	});
 
 	it("loads valid .cmintrc.ts config with string values", async () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
-		await writeFile(
-			join(tmpDir, ".cmintrc.ts"),
-			`export default { "*.ts": "biome check" };`,
-		);
+		await writeFile(join(tmpDir, ".cmintrc.ts"), `export default { "*.ts": "biome check" };`);
 		const config = await loadConfig(tmpDir);
 		expect(config["*.ts"]).toBe("biome check");
 	});
@@ -227,9 +220,7 @@ describe("loadConfig", () => {
 			join(tmpDir, ".cmintrc.js"),
 			`export default { "*.ts": ["biome check", "vitest run"] };`,
 		);
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		const config = await loadConfig(tmpDir);
 		expect(config["*.ts"]).toEqual(["biome check", "vitest run"]);
 	});
@@ -238,9 +229,7 @@ describe("loadConfig", () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
 		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
 		await writeFile(join(tmpDir, ".cmintrc.js"), `export default null;`);
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		await expect(loadConfig(tmpDir)).rejects.toThrow(/must export/);
 	});
 
@@ -248,9 +237,7 @@ describe("loadConfig", () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
 		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
 		await writeFile(join(tmpDir, ".cmintrc.js"), `export default [];`);
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		await expect(loadConfig(tmpDir)).rejects.toThrow(/must export/);
 	});
 
@@ -258,9 +245,7 @@ describe("loadConfig", () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
 		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
 		await writeFile(join(tmpDir, ".cmintrc.js"), `export default "oops";`);
-		mockAccess
-			.mockRejectedValueOnce(new Error("ENOENT"))
-			.mockResolvedValueOnce(undefined);
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")).mockResolvedValueOnce(undefined);
 		await expect(loadConfig(tmpDir)).rejects.toThrow(/must export/);
 	});
 
@@ -419,10 +404,7 @@ describe("runAllChecks", () => {
 
 	it("returns no-op when config exists but no files match", async () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
-		await writeFile(
-			join(tmpDir, ".cmintrc.ts"),
-			`export default { "*.py": "flake8" };`,
-		);
+		await writeFile(join(tmpDir, ".cmintrc.ts"), `export default { "*.py": "flake8" };`);
 		mockAccess.mockResolvedValue(undefined);
 
 		const result = await runAllChecks(tmpDir, ["src/foo.ts"], 5000);
