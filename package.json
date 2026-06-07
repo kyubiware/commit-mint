@@ -23,18 +23,13 @@
 		"release:patch": "bash scripts/release.sh patch",
 		"release:minor": "bash scripts/release.sh minor",
 		"release:major": "bash scripts/release.sh major",
-		"prepublishOnly": "npm run build",
-		"prepare": "simple-git-hooks"
-	},
-	"simple-git-hooks": {
-		"pre-commit": "npx lint-staged"
+		"prepublishOnly": "npm run build"
 	},
 	"keywords": [
 		"git",
 		"commit",
 		"hooks",
 		"pre-commit",
-		"lint-staged",
 		"ai",
 		"groq",
 		"conventional-commits",
@@ -59,8 +54,6 @@
 		"@biomejs/biome": "^2.0.0",
 		"@types/ini": "^4.1.1",
 		"@vitest/coverage-v8": "^3.2.4",
-		"lint-staged": "^17.0.5",
-		"simple-git-hooks": "^2.13.1",
 		"tsdown": "^0.22.0",
 		"tsx": "^4.22.2",
 		"typescript": "^5.9.2",
