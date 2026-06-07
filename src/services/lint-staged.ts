@@ -13,6 +13,7 @@ const CONFIG_FILES = [
 	"lint-staged.config.mjs",
 	"lint-staged.config.cjs",
 	"lint-staged.config.js",
+	"lint-staged.config.ts",
 ];
 
 export async function hasLintStagedConfig(repoRoot: string): Promise<boolean> {
