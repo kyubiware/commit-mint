@@ -8,7 +8,7 @@
 - Single-entry orchestrator (`commitCommand`) that stages, generates, attempts, and recovers from hook failures
 - Plugin-style error parsers for 5 hook tools (lint-staged, biome, tsc, vitest/jest, eslint)
 - 3-tier diff compression for AI prompt efficiency
-- Interactive staging menu for multi-file workflows (select files, auto-group, run lint-staged)
+- Interactive staging menu for multi-file workflows (select files, auto-group, run checks from .cmintrc.js)
 - Recursive recovery menu that loops until success or cancellation
 - AI-powered auto-grouping of changed files into logical commits
 - Code review via OpenCode or Groq (in-flow during message review or standalone `--review`)
@@ -32,7 +32,7 @@
 **Services Layer:**
 - Purpose: Encapsulate external system interactions and business logic
 - Location: `src/services/`
-- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `review-ai.ts` (AI code review), `lint-staged.ts` (lint-staged detection/runner)
+- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `review-ai.ts` (AI code review), `checks.ts` (User-defined pre-commit checks via .cmintrc.js — config detection, glob matching via picomatch, command execution)
 - Depends on: `execa`, `groq-sdk`, `ini`, Node.js built-ins
 - Used by: Commands layer
 
@@ -61,20 +61,21 @@
 5. Stage changes:
    - `--all` flag: auto-stage all tracked files — `stageAll`
    - Single file: auto-stage it — `stageFiles`
-   - Multiple files: show interactive staging menu (select files / auto-group / run lint-staged) — `src/ui/menu.ts:showStagingMenu`
+   - Multiple files: show interactive staging menu (select files / auto-group / run checks) — `src/ui/menu.ts:showStagingMenu`
      - "Auto-group into commits" delegates to `runAutoGroupFlow` in `src/commands/auto-group.ts`
-     - "Run lint-staged checks" runs `runLintStaged` then refreshes changed files list
-6. Get staged diff with exclude patterns — `src/services/git.ts:getStagedDiff`
+     - "Run checks (from .cmintrc.js)" runs `runAllChecks` then refreshes changed files list
+6. Run user-defined checks (if .cmintrc.js exists) — `src/services/checks.ts:runAllChecks`. On failure: show check failure menu (copy/skip/cancel) — `src/ui/menu.ts:showCheckFailureMenu`
+7. Get staged diff with exclude patterns — `src/services/git.ts:getStagedDiff`
    - Returns `ExcludedFilesResult` when all staged files match exclude patterns (lockfiles, dist, etc.)
    - Excluded-only case: builds hardcoded message ("chore: update lockfile" / "chore: update generated files"), caches it, commits directly
-7. Ensure API key exists (prompt if missing) — `src/services/config.ts:getApiKey` / `setConfigValue`
-8. Generate commit message via AI with 3-tier diff compression — `src/services/ai.ts:generateCommitMessage`
-9. Present message review (use-as-is / edit / review with OpenCode / cancel) — `src/ui/review-message.ts:reviewCommitMessage`
-10. Cache commit message — `src/utils/cache.ts:saveCachedCommit`
-11. Attempt `git commit -m` with real-time stderr collection — `src/services/git.ts:attemptCommit`
-12. On success: show tool check summary (parsed from lint-staged output), print "Done." — `src/commands/commit.ts`
-13. On failure: parse hook errors — `src/services/hooks.ts:parseHookErrors`
-14. Show recovery menu — `src/ui/menu.ts:showRecoveryMenu`
+8. Ensure API key exists (prompt if missing) — `src/services/config.ts:getApiKey` / `setConfigValue`
+9. Generate commit message via AI with 3-tier diff compression — `src/services/ai.ts:generateCommitMessage`
+10. Present message review (use-as-is / edit / review with OpenCode / cancel) — `src/ui/review-message.ts:reviewCommitMessage`
+11. Cache commit message — `src/utils/cache.ts:saveCachedCommit`
+12. Attempt `git commit -m` with real-time stderr collection — `src/services/git.ts:attemptCommit`
+13. On success: print "Done." — `src/commands/commit.ts`
+14. On failure: parse hook errors — `src/services/hooks.ts:parseHookErrors`
+15. Show recovery menu — `src/ui/menu.ts:showRecoveryMenu`
 
 **Recovery Menu Flow:**
 
@@ -172,6 +173,21 @@
 - Purpose: Result of AI file grouping
 - Location: `src/services/grouping.ts:12`
 - Pattern: Interface with `{ groups: CommitGroup[], excluded: string[] }`
+
+**CheckConfig:**
+- Purpose: User-defined check configuration mapping globs to commands
+- Location: `src/services/checks.ts:8`
+- Pattern: Index signature `[glob: string]: string | string[]`
+
+**CheckResult:**
+- Purpose: Result of a single check command execution
+- Location: `src/services/checks.ts:13`
+- Pattern: Interface with `{ ok, tool, command, stdout, stderr, files }` shape
+
+**CheckResults:**
+- Purpose: Aggregated results from running all configured checks
+- Location: `src/services/checks.ts:23`
+- Pattern: Interface with `{ ok, results: CheckResult[] }` shape
 
 ## Entry Points
 
