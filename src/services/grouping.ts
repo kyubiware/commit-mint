@@ -33,6 +33,8 @@ const LOCKFILE_COMPANIONS: Record<string, string> = {
 	"package-lock.json": "package.json",
 	"pnpm-lock.yaml": "package.json",
 	"yarn.lock": "package.json",
+	"bun.lock": "package.json",
+	"bun.lockb": "package.json",
 };
 
 export function filterExcludedFiles(files: ChangedFile[]): {

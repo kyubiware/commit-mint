@@ -83,6 +83,44 @@ describe("filterExcludedFiles", () => {
 		expect(excluded).toContain("dist/bundle.js");
 	});
 
+	it("includes bun.lock when package.json is present", () => {
+		const files: ChangedFile[] = [
+			{ status: "M", path: "package.json", staged: true },
+			{ status: "M", path: "bun.lock", staged: true },
+			{ status: "M", path: "src/index.ts", staged: true },
+		];
+
+		const { included, excluded } = filterExcludedFiles(files);
+
+		expect(included.map((f) => f.path)).toContain("bun.lock");
+		expect(included.map((f) => f.path)).toContain("package.json");
+		expect(excluded).toEqual([]);
+	});
+
+	it("includes bun.lockb when package.json is present", () => {
+		const files: ChangedFile[] = [
+			{ status: "M", path: "package.json", staged: true },
+			{ status: "M", path: "bun.lockb", staged: true },
+		];
+
+		const { included, excluded } = filterExcludedFiles(files);
+
+		expect(included.map((f) => f.path)).toContain("bun.lockb");
+		expect(excluded).toEqual([]);
+	});
+
+	it("still excludes bun.lock when no companion package.json exists", () => {
+		const files: ChangedFile[] = [
+			{ status: "M", path: "bun.lock", staged: true },
+			{ status: "M", path: "src/index.ts", staged: true },
+		];
+
+		const { included, excluded } = filterExcludedFiles(files);
+
+		expect(included.map((f) => f.path)).not.toContain("bun.lock");
+		expect(excluded).toContain("bun.lock");
+	});
+
 	it("excludes *.min.js and *.log files", () => {
 		const files: ChangedFile[] = [
 			{ status: "M", path: "vendor.min.js", staged: true },

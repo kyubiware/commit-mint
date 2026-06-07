@@ -111,7 +111,14 @@ import { generateCommitMessage } from "../services/ai.js";
 import { runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig } from "../services/config.js";
 import type { ChangedFile } from "../services/git.js";
-import { attemptCommit, getHead, getRepoRoot, getStagedDiff, stageFiles } from "../services/git.js";
+import {
+	attemptCommit,
+	getHead,
+	getRepoRoot,
+	getStagedDiff,
+	resetStaging,
+	stageFiles,
+} from "../services/git.js";
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import { showGroupingConfirmation } from "../ui/grouping.js";
@@ -303,5 +310,107 @@ describe("runAutoGroupFlow check integration", () => {
 		expect(result).toBe("cancelled");
 		expect(attemptCommit).not.toHaveBeenCalled();
 		expect(stageFiles).not.toHaveBeenCalled();
+	});
+});
+
+describe("runAutoGroupFlow excluded files handling", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	const flags: CommitFlags = { retry: false, auto: true };
+
+	function setupExcludedOnlyMocks() {
+		// Only excluded files (e.g. bun.lock with no package.json change)
+		vi.mocked(filterExcludedFiles).mockReturnValue({
+			included: [],
+			excluded: ["bun.lock"],
+		});
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		});
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(getHead).mockResolvedValue("abc123");
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+	}
+
+	it("commits excluded-only files with hardcoded message instead of silently dropping them", async () => {
+		setupExcludedOnlyMocks();
+
+		const result = await runAutoGroupFlow(
+			[{ status: "M", path: "bun.lock", staged: true }],
+			flags,
+		);
+
+		// Should have staged the excluded file and committed it
+		expect(resetStaging).toHaveBeenCalled();
+		expect(stageFiles).toHaveBeenCalledWith(["bun.lock"]);
+		expect(attemptCommit).toHaveBeenCalledWith("chore: update lockfile");
+		expect(result).toBe("committed");
+	});
+
+	it("commits excluded files first, then groups included files", async () => {
+		const mixedFiles: ChangedFile[] = [
+			{ status: "M", path: "bun.lock", staged: true },
+			{ status: "M", path: "src/a.ts", staged: true },
+		];
+
+		vi.mocked(filterExcludedFiles).mockReturnValue({
+			included: [{ status: "M", path: "src/a.ts", staged: true }],
+			excluded: ["bun.lock"],
+		});
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		});
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(getHead).mockResolvedValue("abc123");
+		vi.mocked(generateGroups).mockResolvedValue({
+			groups: [{ name: "Group 1", description: "desc", files: ["src/a.ts"] }],
+			excluded: [],
+		});
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test message");
+		vi.mocked(getStagedDiff).mockResolvedValue({ files: ["src/a.ts"], diff: "diff" });
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+
+		await runAutoGroupFlow(mixedFiles, flags);
+
+		// First commit: excluded files with hardcoded message
+		expect(attemptCommit).toHaveBeenCalledWith("chore: update lockfile");
+		// Second commit: included files via group loop (with progress handler)
+		expect(attemptCommit).toHaveBeenCalledTimes(2);
+		expect(generateCommitMessage).toHaveBeenCalled();
+		expect(attemptCommit).toHaveBeenCalledTimes(2);
+	});
+
+	it("uses 'chore: update generated files' for non-lockfile excluded files", async () => {
+		vi.mocked(filterExcludedFiles).mockReturnValue({
+			included: [],
+			excluded: ["dist/bundle.js"],
+		});
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		});
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(getHead).mockResolvedValue("abc123");
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+
+		await runAutoGroupFlow(
+			[{ status: "M", path: "dist/bundle.js", staged: true }],
+			flags,
+		);
+
+		expect(attemptCommit).toHaveBeenCalledWith("chore: update generated files");
 	});
 });
