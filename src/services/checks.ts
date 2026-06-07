@@ -62,8 +62,9 @@ export async function loadConfig(repoRoot: string): Promise<CheckConfig> {
 
 	if (isTS) {
 		const { createJiti } = await import("jiti");
-		const jiti = createJiti(import.meta.url, { interopDefault: true });
-		config = await jiti.import(configPath);
+		const jiti = createJiti(import.meta.url, {});
+		const mod = await jiti.import(configPath);
+		config = (mod as { default?: unknown }).default ?? mod;
 	} else {
 		const imported = (await import(configPath)) as { default?: unknown };
 		config = imported.default;
