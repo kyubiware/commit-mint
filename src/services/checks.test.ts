@@ -250,6 +250,34 @@ describe("matchFiles", () => {
 		const result = matchFiles("*.ts", [".hidden.ts"]);
 		expect(result).toEqual([".hidden.ts"]);
 	});
+
+	it('"*.ts" only matches .ts files in a mixed-extension list', () => {
+		const result = matchFiles("*.ts", [
+			"AGENTS.md",
+			"package.json",
+			"src/commands/commit.ts",
+			"src/ui/menu.ts",
+			".cmintrc.js",
+		]);
+		expect(result).toEqual(["src/commands/commit.ts", "src/ui/menu.ts"]);
+	});
+
+	it('"*.{js,ts,json}" only matches .js/.ts/.json files in a mixed list', () => {
+		const result = matchFiles("*.{js,ts,json}", [
+			"AGENTS.md",
+			"package.json",
+			"src/commands/commit.ts",
+			"src/ui/menu.ts",
+			".cmintrc.js",
+			".lintstagedrc.mjs",
+		]);
+		expect(result).toEqual([
+			"package.json",
+			"src/commands/commit.ts",
+			"src/ui/menu.ts",
+			".cmintrc.js",
+		]);
+	});
 });
 
 describe("buildCommand", () => {
@@ -424,5 +452,77 @@ describe("runAllChecks", () => {
 		expect(result.ok).toBe(true);
 		expect(result.results).toHaveLength(2);
 		expect(mockExeca).toHaveBeenCalledTimes(2);
+	});
+
+	it("supports function commands that receive matched filenames", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
+		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+		await writeFile(
+			join(tmpDir, ".cmintrc.js"),
+			`export default { "*.ts": (files) => \`tsc --noEmit\` };`,
+		);
+		mockAccess.mockResolvedValue(undefined);
+		mockExeca.mockResolvedValue({
+			failed: false,
+			stdout: "",
+			stderr: "",
+			all: "",
+		});
+
+		const result = await runAllChecks(tmpDir, ["src/foo.ts"], 5000);
+		expect(result.ok).toBe(true);
+		expect(result.results).toHaveLength(1);
+		// Function returned "tsc --noEmit" — no file args appended
+		expect(mockExeca).toHaveBeenCalledWith("tsc", ["--noEmit"], expect.any(Object));
+	});
+
+	it("function command returning array runs multiple commands", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
+		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+		await writeFile(
+			join(tmpDir, ".cmintrc.js"),
+			`export default { "*.ts": (files) => ["tsc --noEmit", "vitest run"] };`,
+		);
+		mockAccess.mockResolvedValue(undefined);
+		mockExeca
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			})
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			});
+
+		const result = await runAllChecks(tmpDir, ["src/foo.ts"], 5000);
+		expect(result.ok).toBe(true);
+		expect(result.results).toHaveLength(2);
+		expect(mockExeca).toHaveBeenCalledTimes(2);
+	});
+
+	it("function commands run even when no files match the glob", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
+		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+		await writeFile(
+			join(tmpDir, ".cmintrc.js"),
+			`export default { "*.ts": () => "tsc --noEmit" };`,
+		);
+		mockAccess.mockResolvedValue(undefined);
+		mockExeca.mockResolvedValue({
+			failed: false,
+			stdout: "",
+			stderr: "",
+			all: "",
+		});
+
+		// No .ts files, but function command should still run
+		const result = await runAllChecks(tmpDir, ["README.md"], 5000);
+		expect(result.ok).toBe(true);
+		expect(result.results).toHaveLength(1);
+		expect(mockExeca).toHaveBeenCalledWith("tsc", ["--noEmit"], expect.any(Object));
 	});
 });

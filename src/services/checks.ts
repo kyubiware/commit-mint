@@ -4,9 +4,9 @@ import { execa } from "execa";
 import picomatch from "picomatch";
 import { debug } from "../utils/debug.js";
 
-/** Config shape from .cmintrc.js — glob keys map to command strings or string arrays */
+/** Config shape from .cmintrc.js — glob keys map to command strings, string arrays, or functions */
 export interface CheckConfig {
-	[glob: string]: string | string[];
+	[glob: string]: string | string[] | ((filenames: string[]) => string | string[]);
 }
 
 /** Result of a single check command execution */
@@ -116,13 +116,17 @@ export async function runCommand(command: string, timeout: number): Promise<Chec
  */
 export function matchFiles(pattern: string, files: string[]): string[] {
 	if (!pattern) return [];
+	const matchBase = !pattern.includes("/");
 	const isMatch = picomatch(pattern, {
 		dot: true,
-		matchBase: !pattern.includes("/"),
 		posixSlashes: true,
 		strictBrackets: true,
 	});
-	return files.filter(isMatch);
+	return files.filter((f) => {
+		const parts = f.split("/");
+		const target = matchBase ? parts[parts.length - 1] : f;
+		return isMatch(target);
+	});
 }
 
 /**
@@ -158,17 +162,26 @@ export async function runAllChecks(
 	// Process each glob → commands entry
 	for (const [glob, commands] of Object.entries(config)) {
 		const matchedFiles = matchFiles(glob, stagedFiles);
-		if (matchedFiles.length === 0) {
+		const isFunction = typeof commands === "function";
+
+		// Function commands always run (even with no matches); string commands skip when no matches
+		if (matchedFiles.length === 0 && !isFunction) {
 			debug("runAllChecks: no files matched pattern '%s'", glob);
 			continue;
 		}
 		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length);
 
-		// Normalize commands to array
-		const cmds = Array.isArray(commands) ? commands : [commands];
+		// Resolve commands: function receives matched filenames, string used as-is
+		let cmds: string[];
+		if (isFunction) {
+			const resolved = (commands as (files: string[]) => string | string[])(matchedFiles);
+			cmds = Array.isArray(resolved) ? resolved : [resolved];
+		} else {
+			cmds = Array.isArray(commands) ? commands : [commands as string];
+		}
 
 		for (const cmd of cmds) {
-			const fullCommand = buildCommand(cmd, matchedFiles);
+			const fullCommand = isFunction ? cmd : buildCommand(cmd, matchedFiles);
 			debug("runAllChecks: running '%s'", fullCommand);
 			const result = await runCommand(fullCommand, timeout);
 			// Attach matched files to result
