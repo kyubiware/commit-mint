@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cli } from "cleye";
+import { cli, command } from "cleye";
 import pkg from "../package.json" with { type: "json" };
 
 const { version } = pkg;
@@ -50,7 +50,11 @@ cli(
 				default: false,
 			},
 		},
-		commands: [configCommand],
+		commands: [
+			command({ name: "config" }, async () => {
+				await configCommand();
+			}),
+		],
 	},
 	(argv) => {
 		setDebug(argv.flags.debug);
