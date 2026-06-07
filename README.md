@@ -66,6 +66,7 @@ On first run, you'll be prompted for a `GROQ_API_KEY` if it's not set in `~/.com
 - **Auto-group by intent.** AI reads your diff and groups files into logical commits. No more `feat: update stuff` that bundles unrelated changes.
 - **Zero-prompt auto mode.** `cmint -a` stages, groups, generates messages, and commits without a single prompt. Walk away and come back to clean history.
 - **Hook failures handled in-flow.** When pre-commit hooks fail, you get a parsed error summary and a menu to copy, skip, retry, or edit. No raw stderr dumps.
+- **Built-in pre-commit checks.** Define checks in `.cmintrc.js` and run them before AI generation. A failing check never wastes an API call.
 - **Message caching on failure.** A failed commit caches its message. Fix the error, run `cmint --retry`, and pick up exactly where you left off.
 - **Review before you commit.** Every message can be accepted, edited, or reviewed with OpenCode before it hits the repo.
 
@@ -113,6 +114,9 @@ cmint -r
 # Review staged changes with AI
 cmint -R
 
+# Skip pre-commit checks
+cmint -n
+
 # Debug mode
 cmint -d
 
@@ -129,6 +133,7 @@ cmint config set model openai/gpt-oss-20b
 | `-H, --hint` | Add context hint for AI message generation |
 | `-r, --retry` | Retry the last failed commit |
 | `-R, --review` | Review staged changes with a coding model |
+| `-n, --noCheck` | Skip pre-commit checks |
 | `-d, --debug` | Enable debug output |
 | `-h, --help` | Show help |
 | `-v, --version` | Show version |
@@ -171,7 +176,45 @@ When a pre-commit hook blocks your commit, commit-mint parses the error output a
 | **Edit message** | Opens a prompt to modify the commit message, then retries |
 | **Cancel** | Exits. Commit message is cached for `cmint --retry` |
 
+The recovery menu also appears when `.cmintrc.js` pre-commit checks fail.
+
 commit-mint parses errors from **lint-staged**, **biome**, **TypeScript** (`tsc`), **vitest** / **jest**, and **ESLint**. Unrecognized output falls back to raw stderr.
+
+## Pre-commit checks
+
+Define custom checks in `.cmintrc.js` at your project root. They run after staging, before AI message generation, so a failing check never wastes an API call.
+
+```js
+export default {
+  // String: matched files are appended as arguments
+  "*.{js,ts,json}": "biome check --write --no-errors-on-unmatched",
+
+  // Function: receive matched filenames, return command(s)
+  "*.ts": () => ["tsc --noEmit", "vitest run --passWithNoTests"],
+};
+```
+
+Glob patterns use [picomatch](https://github.com/micromatch/picomatch). String commands receive matched files as trailing arguments. Functions receive the matched file list and return one or more commands to run.
+
+Checks execute sequentially and fail fast. Each command has a 60-second timeout.
+
+### When checks run
+
+- **Manual mode**: The staging menu shows a "Run checks" option when `.cmintrc.js` exists
+- **Auto-group mode**: Checks run automatically on all staged files before grouping
+- **Normal commit**: Checks run on staged files after staging, before diff/AI
+
+### Check failure menu
+
+When a check fails, you get a menu with three options:
+
+| Option | What it does |
+|--------|-------------|
+| **Copy error report** | Copies the error output to clipboard |
+| **Skip checks** | Proceeds without running checks |
+| **Cancel** | Exits. Message is cached for `cmint --retry` |
+
+Pass `--noCheck` or `-n` to skip checks entirely.
 
 ## Code review
 
@@ -216,6 +259,7 @@ cmint --help
     --message, -m    Provide a commit message directly (skip AI generation)
     --hint, -H       Add context hint for AI commit message generation
     --review, -R     Review staged changes with a coding model (default: false)
+    --noCheck, -n    Skip pre-commit checks (default: false)
     --debug, -d      Enable debug output (default: false)
     --help, -h       Show help
     --version, -v    Show version
@@ -245,6 +289,7 @@ commit-mint/
 │   │   ├── grouping.ts     # AI-powered file grouping into logical commits
 │   │   ├── review-ai.ts    # AI code review via Groq
 │   │   ├── hooks.ts        # Hook error parser (lint-staged, biome, tsc, etc.)
+│   │   ├── checks.ts       # Pre-commit checks via .cmintrc.js (glob matching, command execution)
 │   │   ├── config.ts       # INI config read/write at ~/.commit-mint
 │   │   └── clipboard.ts    # Cross-platform clipboard (xclip/wl-copy/pbcopy)
 │   ├── ui/
@@ -265,7 +310,7 @@ commit-mint/
 
 ## Non-goals
 
-- Not a hook manager — use husky, lefthook
+- Not a git hook manager — `.cmintrc.js` checks run in-flow, not via git hooks. For git hooks, use husky or lefthook
 - Not a linter/formatter — use biome, eslint, prettier
 - Not a git TUI — use lazygit, gitui
 - Not a commitizen replacement — just generates conventional commit messages via AI
