@@ -1,29 +1,23 @@
 import { intro, isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
-import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js";
 import {
 	assertGitRepo,
-	attemptCommit,
-	attemptCommitNoVerify,
 	getChangedFiles,
 	getHead,
+	getRepoRoot,
 	getStagedDiff,
 	getStatusShort,
-	stageAll,
 	stageFiles,
 } from "../services/git.js";
-import { createProgressHandler } from "../services/hook-progress.js";
-import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import {
 	formatProviderName,
 	isValidProvider,
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js";
-import { showCheckFailureMenu, showRecoveryMenu, showStagingMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
-import { loadCachedCommit, saveCachedCommit } from "../utils/cache.js";
+import { saveCachedCommit } from "../utils/cache.js";
 import { debug } from "../utils/debug.js";
 import {
 	buildExcludedFilesMessage,
@@ -31,6 +25,9 @@ import {
 	generateMessage,
 	runAutoGroupFlow,
 } from "./auto-group.js";
+import { commitWithRecovery } from "./commit-utils.js";
+import { handleRetry } from "./retry.js";
+import { handleStaging, runPreCommitChecks } from "./staging.js";
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Sequential CLI lifecycle orchestrator
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-branch state machine (retry/normal, staging, review, recovery)
@@ -40,50 +37,7 @@ export async function commitCommand(flags: CommitFlags) {
 
 	// ── Retry mode ──────────────────────────────────────────────────
 	if (flags.retry) {
-		debug("Entering retry mode");
-		const { getRepoRoot } = await import("../services/git.js");
-		const repoRoot = await getRepoRoot();
-		debug("Repo root:", repoRoot);
-		const cached = await loadCachedCommit(repoRoot);
-		if (!cached) {
-			debug("No cached commit found");
-			outro(red("No cached commit message found. Run cmint without --retry first."));
-			process.exit(1);
-		}
-		debug("Loaded cached message:", cached.message);
-		intro("commit-mint — retry");
-		const s = spinner();
-		s.start("Running pre-commit hooks...");
-		const result = await attemptCommit(cached.message, [], createProgressHandler(s));
-		s.stop("Attempted commit");
-		debug("Retry commit result:", result);
-		if (result.ok) {
-			// Show clean tool check summary
-			const checks = parseToolChecks(result.stderr ?? "");
-			if (checks.length > 0) {
-				const lines = checks.map((c) => `  ${c.ok ? green("✓") : red("✗")} ${c.tool}`);
-				log.info(lines.join("\n"));
-			}
-			outro(green("Committed successfully."));
-		} else {
-			const errors = parseHookErrors(result.stderr ?? "");
-			debug("Hook errors on retry:", errors.length);
-			const recoveryResult = await showRecoveryMenu(
-				errors,
-				async () => (await attemptCommit(cached.message)).ok,
-				async (msg) => (await attemptCommitNoVerify(msg)).ok,
-				async () => {
-					await stageAll();
-					return (await attemptCommit(cached.message)).ok;
-				},
-				cached.message,
-				result.stderr ?? "",
-			);
-			if (recoveryResult === "cancelled") {
-				process.exit(1);
-			}
-			return;
-		}
+		return handleRetry();
 	}
 
 	// ── Normal mode ─────────────────────────────────────────────────
@@ -103,7 +57,6 @@ export async function commitCommand(flags: CommitFlags) {
 
 	try {
 		if (flags.auto) {
-			// --auto flag: auto-group with auto-accept, skip all menus
 			if (flags.message) {
 				outro(red("--message flag is not compatible with auto-group mode."));
 				return;
@@ -114,81 +67,13 @@ export async function commitCommand(flags: CommitFlags) {
 			}
 			return;
 		} else if (changedFiles.length === 1) {
-			// Single file: auto-stage it
 			s.start(`Staging ${changedFiles[0].path}...`);
 			await stageFiles([changedFiles[0].path]);
 			s.stop("File staged");
 		} else {
-			// Multiple files: show interactive staging menu (loops for checks)
-			const { getRepoRoot } = await import("../services/git.js");
-			const repoRoot = await getRepoRoot();
-			const checksAvailable = await detectConfig(repoRoot);
-			debug("checks available:", checksAvailable);
-
-			let stagingResult: Awaited<ReturnType<typeof showStagingMenu>> = null;
-			let filesToStage: string[] = [];
-			let stageAllFlag = false;
-			let skipStaging = false;
-
-			while (true) {
-				stagingResult = await showStagingMenu(changedFiles, checksAvailable);
-
-				if (stagingResult === "autogroup") {
-					if (flags.message) {
-						outro(red("--message flag is not compatible with auto-group mode."));
-						return;
-					}
-					const agResult = await runAutoGroupFlow(changedFiles, flags);
-					if (agResult !== "committed") {
-						process.exit(1);
-					}
-					return;
-				}
-
-				if (stagingResult === "checks") {
-					await stageAll();
-					const ckSpinner = spinner();
-					ckSpinner.start("Running checks...");
-					const allFiles = changedFiles.filter((f) => f.status !== "D").map((f) => f.path);
-					const ckResult = await runAllChecks(repoRoot, allFiles, 60000);
-					if (ckResult.ok) {
-						ckSpinner.stop("All checks passed");
-						for (const r of ckResult.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
-					} else {
-						const failed = ckResult.results.filter((r) => !r.ok);
-						ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
-						for (const r of failed)
-							log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`);
-					}
-					changedFiles = await getChangedFiles();
-					continue;
-				}
-
-				if (stagingResult === "staged") {
-					// Files already staged — skip staging step
-					skipStaging = true;
-					break;
-				}
-
-				if (!stagingResult) {
-					outro(dim("Cancelled."));
-					return;
-				}
-
-				filesToStage = stagingResult.files;
-				stageAllFlag = stagingResult.all;
-				break;
-			}
-
-			if (!skipStaging) {
-				s.start(`Staging ${filesToStage.length} file${filesToStage.length !== 1 ? "s" : ""}...`);
-				if (stageAllFlag) {
-					await stageAll();
-				} else {
-					await stageFiles(filesToStage);
-				}
-				s.stop("Files staged");
-			}
+			const result = await handleStaging(changedFiles, flags);
+			if (!result) return;
+			changedFiles = result.changedFiles;
 		}
 	} catch (err) {
 		s.stop(red("Staging failed."));
@@ -199,38 +84,7 @@ export async function commitCommand(flags: CommitFlags) {
 	}
 
 	// Run user-defined pre-commit checks (before AI message generation)
-	if (!flags.noCheck) {
-		const { getRepoRoot: getCheckRoot } = await import("../services/git.js");
-		const checkRoot = await getCheckRoot();
-		const stagedFileList = changedFiles
-			.filter((f) => f.staged && f.status !== "D")
-			.map((f) => f.path);
-		if (stagedFileList.length > 0) {
-			debug("Running user checks on %d staged files...", stagedFileList.length);
-			const checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
-			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
-
-			if (!checkResults.ok) {
-				// Convert CheckResult[] to HookError[] for display
-				const checkErrors = checkResults.results
-					.filter((r) => !r.ok)
-					.map((r) => ({
-						tool: r.tool,
-						message: r.stderr || `Check command failed: ${r.command}`,
-						raw: r.stderr,
-					}));
-				const rawStderr = checkResults.results
-					.filter((r) => !r.ok)
-					.map((r) => `[${r.tool}] ${r.stderr}`)
-					.join("\n");
-				const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
-				if (menuResult === "cancelled") {
-					process.exit(1);
-				}
-				// "skipped" → continue to message generation
-			}
-		}
-	}
+	await runPreCommitChecks(changedFiles, flags.noCheck);
 
 	// Get diff for AI
 	const diffResult = await getStagedDiff();
@@ -247,36 +101,17 @@ export async function commitCommand(flags: CommitFlags) {
 
 		log.info(diffResult.excludedFiles.map((f) => `     ${f}`).join("\n"));
 
-		// Cache and commit with hardcoded message
-		const { getRepoRoot } = await import("../services/git.js");
 		const repoRoot = await getRepoRoot();
 		await saveCachedCommit(repoRoot, message);
 
 		s.start("Running pre-commit hooks...");
 		const headBefore = await getHead();
-		const result = await attemptCommit(message, [], createProgressHandler(s));
-		const headAfter = await getHead();
-
-		if (result.ok || headBefore !== headAfter) {
-			s.stop("Committed successfully.");
+		const result = await commitWithRecovery(message, s, headBefore);
+		if (result === "committed") {
 			outro(green("Done."));
 			return;
 		}
-
-		s.stop("Commit failed.");
-		const errors = parseHookErrors(result.stderr ?? "");
-		const recoveryResult = await showRecoveryMenu(
-			errors,
-			async () => (await attemptCommit(message)).ok,
-			async (msg) => (await attemptCommitNoVerify(msg)).ok,
-			async () => {
-				await stageAll();
-				return (await attemptCommit(message)).ok;
-			},
-			message,
-			result.stderr ?? "",
-		);
-		if (recoveryResult === "cancelled") {
+		if (result === "cancelled") {
 			process.exit(1);
 		}
 		return;
@@ -294,7 +129,6 @@ export async function commitCommand(flags: CommitFlags) {
 		debug("Using provided message:", flags.message);
 		message = flags.message;
 	} else {
-		// Ensure API key is available before generating
 		const config = await readConfig();
 		const provider: ProviderName = isValidProvider(config.provider ?? "groq")
 			? (config.provider as ProviderName)
@@ -343,7 +177,6 @@ export async function commitCommand(flags: CommitFlags) {
 	message = reviewed;
 
 	// Cache message before attempting commit
-	const { getRepoRoot } = await import("../services/git.js");
 	const repoRoot = await getRepoRoot();
 	await saveCachedCommit(repoRoot, message);
 	debug("Message cached for repo:", repoRoot);
@@ -352,50 +185,14 @@ export async function commitCommand(flags: CommitFlags) {
 	s.start("Running pre-commit hooks...");
 	const headBefore = await getHead();
 	debug("HEAD before commit:", headBefore);
-	const result = await attemptCommit(message, [], createProgressHandler(s));
-	const headAfter = await getHead();
-	debug("HEAD after commit:", headAfter);
+	const result = await commitWithRecovery(message, s, headBefore);
 	debug("Commit result:", result);
 
-	if (result.ok || headBefore !== headAfter) {
-		s.stop("Committed successfully.");
-
-		// Show clean tool check summary
-		const checks = parseToolChecks(result.stderr ?? "");
-		if (checks.length > 0) {
-			const lines = checks.map((c) => `  ${c.ok ? green("✓") : red("✗")} ${c.tool}`);
-			log.info(lines.join("\n"));
-		}
-
+	if (result === "committed") {
 		outro(green("Done."));
 		return;
 	}
-
-	s.stop("Commit failed.");
-	debug("Commit failed, showing recovery menu");
-
-	// Hook failure — show recovery menu
-	const errors = parseHookErrors(result.stderr ?? "");
-	debug("Parsed hook errors:", errors.length, "errors");
-	const recoveryResult = await showRecoveryMenu(
-		errors,
-		async () => {
-			const r = await attemptCommit(message);
-			return r.ok;
-		},
-		async (msg) => {
-			const r = await attemptCommitNoVerify(msg);
-			return r.ok;
-		},
-		async () => {
-			await stageAll();
-			const r = await attemptCommit(message);
-			return r.ok;
-		},
-		message,
-		result.stderr ?? "",
-	);
-	if (recoveryResult === "cancelled") {
+	if (result === "cancelled") {
 		process.exit(1);
 	}
 }

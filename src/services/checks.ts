@@ -4,7 +4,10 @@ import { execa } from "execa";
 import picomatch from "picomatch";
 import { debug } from "../utils/debug.js";
 
-/** Config shape from .cmintrc.js — glob keys map to command strings, string arrays, or functions */
+/** Config file names, checked in priority order */
+const CONFIG_FILES = [".cmintrc.ts", ".cmintrc.js"] as const;
+
+/** Config shape from .cmintrc — glob keys map to command strings, string arrays, or functions */
 export interface CheckConfig {
 	[glob: string]: string | string[] | ((filenames: string[]) => string | string[]);
 }
@@ -26,32 +29,48 @@ export interface CheckResults {
 }
 
 /**
- * Detect whether the repo has a .cmintrc.js config file.
- * Returns true if the file exists and is readable.
+ * Detect whether the repo has a .cmintrc config file (.ts or .js).
+ * Returns the config file path, or null if none found.
  */
-export async function detectConfig(repoRoot: string): Promise<boolean> {
-	debug("detectConfig: checking for .cmintrc.js in %s", repoRoot);
-	try {
-		await access(join(repoRoot, ".cmintrc.js"), constants.R_OK);
-		debug("detectConfig: found .cmintrc.js");
-		return true;
-	} catch {
-		debug("detectConfig: no .cmintrc.js found");
-		return false;
+export async function detectConfig(repoRoot: string): Promise<string | null> {
+	debug("detectConfig: checking for config in %s", repoRoot);
+	for (const name of CONFIG_FILES) {
+		try {
+			await access(join(repoRoot, name), constants.R_OK);
+			debug("detectConfig: found %s", name);
+			return join(repoRoot, name);
+		} catch {
+			// try next config file name
+		}
 	}
+	debug("detectConfig: no config file found");
+	return null;
 }
 
 /**
- * Load and validate the .cmintrc.js config from a repo root.
+ * Load and validate the .cmintrc config from a repo root.
+ * Uses jiti for .ts files, native import() for .js files.
  * Throws if the default export is missing or not a non-null object.
  */
 export async function loadConfig(repoRoot: string): Promise<CheckConfig> {
-	debug("loadConfig: loading .cmintrc.js from %s", repoRoot);
-	const configPath = join(repoRoot, ".cmintrc.js");
-	const imported = (await import(configPath)) as { default?: unknown };
-	const config = imported.default;
+	const configPath = await detectConfig(repoRoot);
+	if (!configPath) throw new Error("No .cmintrc config file found");
+
+	debug("loadConfig: loading %s", configPath);
+	const isTS = configPath.endsWith(".ts");
+	let config: unknown;
+
+	if (isTS) {
+		const { createJiti } = await import("jiti");
+		const jiti = createJiti(import.meta.url, { interopDefault: true });
+		config = await jiti.import(configPath);
+	} else {
+		const imported = (await import(configPath)) as { default?: unknown };
+		config = imported.default;
+	}
+
 	if (!config || typeof config !== "object" || Array.isArray(config)) {
-		throw new Error(".cmintrc.js must export a non-null object with glob\u2192command mappings");
+		throw new Error(".cmintrc must export a non-null object with glob\u2192command mappings");
 	}
 	debug(
 		"loadConfig: loaded %d glob patterns",
@@ -135,7 +154,7 @@ export function matchFiles(pattern: string, files: string[]): string[] {
  * If no files are provided, the base command is returned as-is.
  */
 /**
- * Run all user-defined checks from .cmintrc.js against staged files.
+ * Run all user-defined checks from .cmintrc against staged files.
  * Returns a no-op result when no config exists.
  * Fail-fast: stops on first error.
  */
@@ -147,9 +166,9 @@ export async function runAllChecks(
 	debug("runAllChecks: %d staged files, checking for config in %s", stagedFiles.length, repoRoot);
 
 	// No-op when no config file exists
-	const hasConfig = await detectConfig(repoRoot);
-	if (!hasConfig) {
-		debug("runAllChecks: no .cmintrc.js found, skipping checks");
+	const configPath = await detectConfig(repoRoot);
+	if (!configPath) {
+		debug("runAllChecks: no config found, skipping checks");
 		return { ok: true, results: [] };
 	}
 
