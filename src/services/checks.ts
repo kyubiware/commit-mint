@@ -1,11 +1,27 @@
+import { readFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { execa } from "execa";
 import picomatch from "picomatch";
 import { debug } from "../utils/debug.js";
 
-/** Config file names, checked in priority order */
-const CONFIG_FILES = [".cmintrc.ts", ".cmintrc.js"] as const;
+/** Config file names, checked in priority order (matches lint-staged naming conventions) */
+const CONFIG_FILES = [
+	".cmintrc",
+	".cmintrc.json",
+	".cmintrc.mjs",
+	".cmintrc.mts",
+	".cmintrc.js",
+	".cmintrc.ts",
+	".cmintrc.cjs",
+	".cmintrc.cts",
+	"cmint.config.mjs",
+	"cmint.config.mts",
+	"cmint.config.js",
+	"cmint.config.ts",
+	"cmint.config.cjs",
+	"cmint.config.cts",
+] as const;
 
 /** Config shape from .cmintrc — glob keys map to command strings, string arrays, or functions */
 export interface CheckConfig {
@@ -29,7 +45,7 @@ export interface CheckResults {
 }
 
 /**
- * Detect whether the repo has a .cmintrc config file (.ts or .js).
+ * Detect whether the repo has a cmint config file.
  * Returns the config file path, or null if none found.
  */
 export async function detectConfig(repoRoot: string): Promise<string | null> {
@@ -48,30 +64,38 @@ export async function detectConfig(repoRoot: string): Promise<string | null> {
 }
 
 /**
- * Load and validate the .cmintrc config from a repo root.
- * Uses jiti for .ts files, native import() for .js files.
- * Throws if the default export is missing or not a non-null object.
+ * Load and validate the cmint config from a repo root.
+ * Throws if the loaded value is missing or not a non-null object.
  */
 export async function loadConfig(repoRoot: string): Promise<CheckConfig> {
 	const configPath = await detectConfig(repoRoot);
-	if (!configPath) throw new Error("No .cmintrc config file found");
+	if (!configPath) throw new Error("No cmint config file found");
 
 	debug("loadConfig: loading %s", configPath);
-	const isTS = configPath.endsWith(".ts");
+	const ext = extname(configPath);
+	const isJSON = ext === ".json";
+	const isTS = ext === ".ts" || ext === ".mts" || ext === ".cts";
+	const isCJS = ext === ".cjs";
+	const needsJiti = isTS || isCJS;
+
 	let config: unknown;
 
-	if (isTS) {
+	if (isJSON) {
+		const raw = readFileSync(configPath, "utf-8");
+		config = JSON.parse(raw);
+	} else if (needsJiti) {
 		const { createJiti } = await import("jiti");
 		const jiti = createJiti(import.meta.url, {});
 		const mod = await jiti.import(configPath);
 		config = (mod as { default?: unknown }).default ?? mod;
 	} else {
+		// .js, .mjs, or no extension
 		const imported = (await import(configPath)) as { default?: unknown };
 		config = imported.default;
 	}
 
 	if (!config || typeof config !== "object" || Array.isArray(config)) {
-		throw new Error(".cmintrc must export a non-null object with glob\u2192command mappings");
+		throw new Error("cmint config must export a non-null object with glob\u2192command mappings");
 	}
 	debug(
 		"loadConfig: loaded %d glob patterns",
