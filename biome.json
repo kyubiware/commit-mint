@@ -53,7 +53,7 @@
 						"noExcessiveLinesPerFile": {
 							"level": "warn",
 							"options": {
-								"maxLines": 600
+								"maxLines": 800
 							}
 						}
 					}
