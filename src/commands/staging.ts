@@ -2,6 +2,7 @@ import { log, outro, spinner } from "@clack/prompts";
 import { dim, red } from "kolorist";
 import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getChangedFiles, getRepoRoot, stageAll, stageFiles } from "../services/git.js";
+import { parseHookErrors } from "../services/hooks.js";
 import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
 import { debug } from "../utils/debug.js";
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js";
@@ -89,7 +90,7 @@ export async function handleStaging(
 	return { changedFiles: currentFiles, skipStaging };
 }
 
-/** Run user-defined pre-commit checks from .cmintrc */
+/** Run user-defined pre-commit checks from cmint config */
 export async function runPreCommitChecks(
 	changedFiles: Awaited<ReturnType<typeof getChangedFiles>>,
 	noCheck?: boolean,
@@ -106,17 +107,9 @@ export async function runPreCommitChecks(
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
 	if (!checkResults.ok) {
-		const checkErrors = checkResults.results
-			.filter((r) => !r.ok)
-			.map((r) => ({
-				tool: r.tool,
-				message: r.stderr || `Check command failed: ${r.command}`,
-				raw: r.stderr,
-			}));
-		const rawStderr = checkResults.results
-			.filter((r) => !r.ok)
-			.map((r) => `[${r.tool}] ${r.stderr}`)
-			.join("\n");
+		const failed = checkResults.results.filter((r) => !r.ok);
+		const rawStderr = failed.map((r) => `[${r.tool}] ${r.stderr}`).join("\n");
+		const checkErrors = parseHookErrors(rawStderr);
 		const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
 		if (menuResult === "cancelled") {
 			process.exit(1);

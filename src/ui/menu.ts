@@ -89,7 +89,7 @@ export async function showStagingMenu(
 						{
 							label: "Run checks",
 							value: "checks" as const,
-							hint: "Pre-flight checks from .cmintrc.js",
+							hint: "Pre-flight checks from cmint config",
 						},
 					]
 				: []),
@@ -290,6 +290,11 @@ export async function showCheckFailureMenu(
 					value: "copy",
 				},
 				{
+					label: "View full error output",
+					value: "view",
+					hint: "Show the raw stderr from checks",
+				},
+				{
 					label: "Skip checks and commit",
 					value: "skip",
 				},
@@ -316,6 +321,10 @@ export async function showCheckFailureMenu(
 				} else {
 					p.log.warn(red("No clipboard tool found. Install xclip, wl-copy, or xsel."));
 				}
+				continue;
+			}
+			case "view": {
+				p.note(rawStderr.trim() || "(no raw output)", "Full error output");
 				continue;
 			}
 			case "skip": {
