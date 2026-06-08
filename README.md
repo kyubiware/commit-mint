@@ -66,7 +66,7 @@ On first run, you'll be prompted for a `GROQ_API_KEY` if it's not set in `~/.com
 - **Auto-group by intent.** AI reads your diff and groups files into logical commits. No more `feat: update stuff` that bundles unrelated changes.
 - **Zero-prompt auto mode.** `cmint -a` stages, groups, generates messages, and commits without a single prompt. Walk away and come back to clean history.
 - **Hook failures handled in-flow.** When pre-commit hooks fail, you get a parsed error summary and a menu to copy, skip, retry, or edit. No raw stderr dumps.
-- **Built-in pre-commit checks.** Define checks in `.cmintrc.js` and run them before AI generation. A failing check never wastes an API call.
+- **Built-in pre-commit checks.** Define checks in a cmint config file and run them before AI generation. A failing check never wastes an API call.
 - **Message caching on failure.** A failed commit caches its message. Fix the error, run `cmint --retry`, and pick up exactly where you left off.
 - **Review before you commit.** Every message can be accepted, edited, or reviewed with OpenCode before it hits the repo.
 
@@ -176,13 +176,16 @@ When a pre-commit hook blocks your commit, commit-mint parses the error output a
 | **Edit message** | Opens a prompt to modify the commit message, then retries |
 | **Cancel** | Exits. Commit message is cached for `cmint --retry` |
 
-The recovery menu also appears when `.cmintrc.js` pre-commit checks fail.
+The recovery menu also appears when cmint config pre-commit checks fail.
 
 commit-mint parses errors from **lint-staged**, **biome**, **TypeScript** (`tsc`), **vitest** / **jest**, and **ESLint**. Unrecognized output falls back to raw stderr.
 
 ## Pre-commit checks
 
-Define custom checks in `.cmintrc.js` or `.cmintrc.ts` at your project root. They run after staging, before AI message generation, so a failing check never wastes an API call.
+Define custom checks in a cmint config file at your project root. Supported file names (checked in priority order):
+`.cmintrc`, `.cmintrc.json`, `.cmintrc.{mjs,mts,js,ts,cjs,cts}`, `cmint.config.{mjs,mts,js,ts,cjs,cts}`
+
+They run after staging, before AI message generation, so a failing check never wastes an API call.
 
 ```js
 export default {
@@ -198,7 +201,7 @@ Glob patterns use [picomatch](https://github.com/micromatch/picomatch). String c
 
 ### TypeScript config
 
-Use `.cmintrc.ts` for type safety without adding commit-mint as a project dependency. Add an inline interface and use `satisfies`:
+Use `.cmintrc.ts` or `cmint.config.ts` for type safety without adding commit-mint as a project dependency. Add an inline interface and use `satisfies`:
 
 ```ts
 interface Cmintrc {
@@ -217,7 +220,7 @@ Checks execute sequentially and fail fast. Each command has a 60-second timeout.
 
 ### When checks run
 
-- **Manual mode**: The staging menu shows a "Run checks" option when `.cmintrc.js` exists
+- **Manual mode**: The staging menu shows a "Run checks" option when a cmint config file exists
 - **Auto-group mode**: Checks run automatically on all staged files before grouping
 - **Normal commit**: Checks run on staged files after staging, before diff/AI
 
@@ -306,7 +309,7 @@ commit-mint/
 │   │   ├── grouping.ts     # AI-powered file grouping into logical commits
 │   │   ├── review-ai.ts    # AI code review via Groq
 │   │   ├── hooks.ts        # Hook error parser (lint-staged, biome, tsc, etc.)
-│   │   ├── checks.ts       # Pre-commit checks via .cmintrc.js (glob matching, command execution)
+│   │   ├── checks.ts       # Pre-commit checks via cmint config files (glob matching, command execution)
 │   │   ├── config.ts       # INI config read/write at ~/.commit-mint
 │   │   └── clipboard.ts    # Cross-platform clipboard (xclip/wl-copy/pbcopy)
 │   ├── ui/
@@ -327,7 +330,7 @@ commit-mint/
 
 ## Non-goals
 
-- Not a git hook manager — `.cmintrc.js` checks run in-flow, not via git hooks. For git hooks, use husky or lefthook
+- Not a git hook manager — cmint config checks run in-flow, not via git hooks. For git hooks, use husky or lefthook
 - Not a linter/formatter — use biome, eslint, prettier
 - Not a git TUI — use lazygit, gitui
 - Not a commitizen replacement — just generates conventional commit messages via AI

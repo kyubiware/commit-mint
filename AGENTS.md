@@ -24,7 +24,7 @@ src/
 │   ├── hooks.ts            # Hook error parser (lint-staged, biome, tsc, vitest, eslint)
 │   ├── config.ts           # INI config at ~/.commit-mint
 │   ├── clipboard.ts        # Cross-platform clipboard (xclip/wl-copy/pbcopy)
-│   └── checks.ts           # User-defined pre-commit checks (.cmintrc.js config detection, glob matching, command execution)
+│   └── checks.ts           # User-defined pre-commit checks (cmint config files detection, glob matching, command execution)
 ├── ui/
 │   └── menu.ts             # Recovery TUI (copy/skip/retry/edit/cancel)
 └── utils/
@@ -45,7 +45,7 @@ src/
 | Config format/defaults | `src/services/config.ts` | INI at `~/.commit-mint`, defaults at line 20 |
 | Cache persistence | `src/utils/cache.ts` | SHA-256 hash of repo path as key |
 | Debug logging | `src/utils/debug.ts` | `debug(...)` prints to stderr when `--debug` flag is set |
-| Add new check command | `src/services/checks.ts` | Add to .cmintrc.js config |
+| Add new check command | `src/services/checks.ts` | Add to cmint config file |
 | Change check behavior | `src/services/checks.ts` | `matchFiles`, `buildCommand`, `runCommand`, `runAllChecks` |
 
 ## CODE MAP
@@ -67,8 +67,8 @@ src/
 | `copyToClipboard` | Function | `src/services/clipboard.ts:3` | Tries wl-copy → xclip → xsel → pbcopy |
 | `debug` | Function | `src/utils/debug.ts:13` | Timestamped stderr output (gated by `isDebug()`) |
 | `configCommand` | Command | `src/commands/config.ts:4` | `cmint config get/set` |
-| `detectConfig` | Function | `src/services/checks.ts:32` | Check for .cmintrc.js at repo root |
-| `loadConfig` | Function | `src/services/checks.ts:48` | Load and validate .cmintrc.js |
+| `detectConfig` | Function | `src/services/checks.ts:51` | Detect cmint config file (14 supported naming patterns) |
+| `loadConfig` | Function | `src/services/checks.ts:70` | Load and validate cmint config (JSON, JS/TS, CJS/MJS) |
 | `matchFiles` | Function | `src/services/checks.ts:117` | Filter files by picomatch glob |
 | `buildCommand` | Function | `src/services/checks.ts:190` | Build command string with quoted file paths |
 | `runCommand` | Function | `src/services/checks.ts:68` | Execute check command with timeout |
@@ -94,7 +94,7 @@ src/
 - **NEVER add clipboard dependencies** — shell out to platform tools (xclip/wl-copy/pbcopy)
 - **NEVER modify hook output parsing without testing all 5 parsers** — lint-staged, biome, tsc, vitest/eslint are all interleaved in `parseHookErrors`
 - **NEVER hardcode model names** — read from config (`model` key in `~/.commit-mint`)
-- **NEVER add lint-staged dependency** — project uses .cmintrc.js for pre-commit checks
+- **NEVER add lint-staged dependency** — project uses cmint config files for pre-commit checks
 
 ## COMMANDS
 

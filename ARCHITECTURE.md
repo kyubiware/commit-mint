@@ -8,7 +8,7 @@
 - Single-entry orchestrator (`commitCommand`) that stages, generates, attempts, and recovers from hook failures
 - Plugin-style error parsers for 5 hook tools (lint-staged, biome, tsc, vitest/jest, eslint)
 - 3-tier diff compression for AI prompt efficiency
-- Interactive staging menu for multi-file workflows (select files, auto-group, run checks from .cmintrc.js)
+- Interactive staging menu for multi-file workflows (select files, auto-group, run checks from cmint config)
 - Recursive recovery menu that loops until success or cancellation
 - AI-powered auto-grouping of changed files into logical commits
 - Code review via OpenCode or Groq (in-flow during message review or standalone `--review`)
@@ -32,7 +32,7 @@
 **Services Layer:**
 - Purpose: Encapsulate external system interactions and business logic
 - Location: `src/services/`
-- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `review-ai.ts` (AI code review), `checks.ts` (User-defined pre-commit checks via .cmintrc.js — config detection, glob matching via picomatch, command execution)
+- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `review-ai.ts` (AI code review), `checks.ts` (User-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution)
 - Depends on: `execa`, `groq-sdk`, `ini`, Node.js built-ins
 - Used by: Commands layer
 
@@ -63,8 +63,8 @@
    - Single file: auto-stage it — `stageFiles`
    - Multiple files: show interactive staging menu (select files / auto-group / run checks) — `src/ui/menu.ts:showStagingMenu`
      - "Auto-group into commits" delegates to `runAutoGroupFlow` in `src/commands/auto-group.ts`
-     - "Run checks (from .cmintrc.js)" runs `runAllChecks` then refreshes changed files list
-6. Run user-defined checks (if .cmintrc.js exists) — `src/services/checks.ts:runAllChecks`. On failure: show check failure menu (copy/skip/cancel) — `src/ui/menu.ts:showCheckFailureMenu`
+      - "Run checks" runs `runAllChecks` then refreshes changed files list
+6. Run user-defined checks (if cmint config exists) — `src/services/checks.ts:runAllChecks`. On failure: show check failure menu (copy/skip/cancel) — `src/ui/menu.ts:showCheckFailureMenu`
 7. Get staged diff with exclude patterns — `src/services/git.ts:getStagedDiff`
    - Returns `ExcludedFilesResult` when all staged files match exclude patterns (lockfiles, dist, etc.)
    - Excluded-only case: builds hardcoded message ("chore: update lockfile" / "chore: update generated files"), caches it, commits directly
