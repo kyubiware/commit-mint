@@ -282,29 +282,42 @@ describe("runAutoGroupFlow check integration", () => {
 		expect(result).toBe("committed");
 	});
 
-	it("checks fail → recovery menu → user cancels → no groups committed", async () => {
+	it("checks fail → parses stderr into concise summaries → recovery menu → user cancels → no groups committed", async () => {
 		setupCheckMocks();
+		const biomeStderr =
+			"src/a.ts:1:1 lint/nursery/noExcessiveLinesPerFile\n\n  ! This file has too many lines.";
 		vi.mocked(runAllChecks).mockResolvedValue({
 			ok: false,
 			results: [
 				{
 					ok: false,
-					tool: "eslint",
-					command: "eslint src/a.ts",
+					tool: "biome",
+					command: "biome check src/a.ts",
 					stdout: "",
-					stderr: "lint error",
+					stderr: biomeStderr,
 					files: ["src/a.ts", "src/b.ts"],
 				},
 			],
 		});
+		// parseHookErrors returns concise 1-liners, NOT raw multi-line stderr
+		const parsedErrors = [
+			{
+				tool: "biome",
+				message: "src/a.ts:1:1 — lint/nursery/noExcessiveLinesPerFile",
+				raw: biomeStderr,
+			},
+		];
+		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
 
 		const result = await runAutoGroupFlow(changedFiles, flags);
 
-		// Recovery menu was shown with parsed check errors
+		// parseHookErrors was called with the combined stderr
+		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		// Recovery menu was shown with PARSED errors (concise 1-liners), not raw stderr
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
-			[expect.objectContaining({ tool: "eslint", message: "lint error" })],
-			expect.stringContaining("[eslint]"),
+			parsedErrors,
+			expect.stringContaining("[biome]"),
 		);
 		// Flow stopped before any commit
 		expect(result).toBe("cancelled");

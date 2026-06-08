@@ -86,17 +86,9 @@ export async function runAutoGroupFlow(
 		debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
 		if (!checkResults.ok) {
-			const checkErrors = checkResults.results
-				.filter((r) => !r.ok)
-				.map((r) => ({
-					tool: r.tool,
-					message: r.stderr || `Check command failed: ${r.command}`,
-					raw: r.stderr,
-				}));
-			const rawStderr = checkResults.results
-				.filter((r) => !r.ok)
-				.map((r) => `[${r.tool}] ${r.stderr}`)
-				.join("\n");
+			const failed = checkResults.results.filter((r) => !r.ok);
+			const rawStderr = failed.map((r) => `[${r.tool}] ${r.stderr}`).join("\n");
+			const checkErrors = parseHookErrors(rawStderr);
 			const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
 			if (menuResult === "cancelled") {
 				return "cancelled";
