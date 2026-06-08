@@ -182,7 +182,7 @@ commit-mint parses errors from **lint-staged**, **biome**, **TypeScript** (`tsc`
 
 ## Pre-commit checks
 
-Define custom checks in `.cmintrc.js` at your project root. They run after staging, before AI message generation, so a failing check never wastes an API call.
+Define custom checks in `.cmintrc.js` or `.cmintrc.ts` at your project root. They run after staging, before AI message generation, so a failing check never wastes an API call.
 
 ```js
 export default {
@@ -195,6 +195,23 @@ export default {
 ```
 
 Glob patterns use [picomatch](https://github.com/micromatch/picomatch). String commands receive matched files as trailing arguments. Functions receive the matched file list and return one or more commands to run.
+
+### TypeScript config
+
+Use `.cmintrc.ts` for type safety without adding commit-mint as a project dependency. Add an inline interface and use `satisfies`:
+
+```ts
+interface Cmintrc {
+  [glob: string]: string | string[] | ((filenames: string[]) => string | string[]);
+}
+
+export default {
+  "*.{js,ts,json}": "biome check --write --no-errors-on-unmatched",
+  "*.ts": () => ["tsc --noEmit", "vitest run --passWithNoTests"],
+} satisfies Cmintrc;
+```
+
+This gives you editor autocomplete and catches invalid values (e.g. numbers, objects) at edit time — no package install needed.
 
 Checks execute sequentially and fail fast. Each command has a 60-second timeout.
 
