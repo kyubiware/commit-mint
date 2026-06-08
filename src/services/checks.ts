@@ -85,7 +85,11 @@ export async function loadConfig(repoRoot: string): Promise<CheckConfig> {
  * Returns a CheckResult with ok=true on success (exit 0), ok=false on failure.
  * Handles ENOENT (command not found) and timeout errors gracefully.
  */
-export async function runCommand(command: string, timeout: number): Promise<CheckResult> {
+export async function runCommand(
+	command: string,
+	timeout: number,
+	repoRoot?: string,
+): Promise<CheckResult> {
 	debug("runCommand: %s (timeout: %dms)", command, timeout);
 	const parts = command.split(" ");
 	const bin = parts[0];
@@ -96,6 +100,8 @@ export async function runCommand(command: string, timeout: number): Promise<Chec
 			reject: false,
 			timeout,
 			all: true,
+			preferLocal: true,
+			...(repoRoot ? { localDir: repoRoot } : {}),
 		});
 		const ok = !result.failed;
 		debug("runCommand: %s \u2014 ok=%s", bin, ok);
@@ -186,11 +192,12 @@ async function runCommandsForGlob(
 	matchedFiles: string[],
 	timeout: number,
 	results: CheckResult[],
+	repoRoot: string,
 ): Promise<boolean> {
 	for (const cmd of cmds) {
 		const fullCommand = isFunction ? cmd : buildCommand(cmd, matchedFiles);
 		debug("runCommandsForGlob: running '%s'", fullCommand);
-		const result = await runCommand(fullCommand, timeout);
+		const result = await runCommand(fullCommand, timeout, repoRoot);
 		results.push({ ...result, files: matchedFiles });
 		if (!result.ok) {
 			debug("runCommandsForGlob: check failed, stopping (fail-fast)");
@@ -234,7 +241,7 @@ export async function runAllChecks(
 		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length);
 
 		const cmds = resolveCommands(commands, matchedFiles);
-		const ok = await runCommandsForGlob(cmds, isFunction, matchedFiles, timeout, results);
+		const ok = await runCommandsForGlob(cmds, isFunction, matchedFiles, timeout, results, repoRoot);
 		if (!ok) return { ok: false, results };
 	}
 

@@ -344,7 +344,7 @@ describe("runCommand", () => {
 			stderr: "",
 			all: "hello\n",
 		});
-		const result = await runCommand("echo hello", 5000);
+		const result = await runCommand("echo hello", 5000, "/repo");
 		expect(result.ok).toBe(true);
 		expect(result.stdout).toBe("hello\n");
 		expect(result.stderr).toBe("");
@@ -359,7 +359,7 @@ describe("runCommand", () => {
 			stderr: "error output",
 			all: "error output",
 		});
-		const result = await runCommand("eslint .", 5000);
+		const result = await runCommand("eslint .", 5000, "/repo");
 		expect(result.ok).toBe(false);
 		expect(result.stderr).toBe("error output");
 	});
@@ -367,7 +367,7 @@ describe("runCommand", () => {
 	it("command not found returns ok: false with not found message", async () => {
 		const err = new Error("spawn nonexistent ENOENT");
 		mockExeca.mockRejectedValue(err);
-		const result = await runCommand("nonexistent", 5000);
+		const result = await runCommand("nonexistent", 5000, "/repo");
 		expect(result.ok).toBe(false);
 		expect(result.stderr).toMatch(/not found/i);
 	});
@@ -375,7 +375,7 @@ describe("runCommand", () => {
 	it("timeout returns ok: false with timed out message", async () => {
 		const err = new Error("execa timed out after 5000ms");
 		mockExeca.mockRejectedValue(err);
-		const result = await runCommand("sleep 10", 5000);
+		const result = await runCommand("sleep 10", 5000, "/repo");
 		expect(result.ok).toBe(false);
 		expect(result.stderr).toMatch(/timed out/i);
 	});
