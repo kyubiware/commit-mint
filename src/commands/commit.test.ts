@@ -126,6 +126,7 @@ import {
 	stageAll,
 	stageFiles,
 } from "../services/git.js";
+import { parseHookErrors } from "../services/hooks.js";
 import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
 import { saveCachedCommit } from "../utils/cache.js";
 
@@ -382,29 +383,41 @@ describe("commitCommand check integration", () => {
 		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000);
 	});
 
-	it("checks fail → recovery menu shown → user skips → message generation proceeds", async () => {
+	it("checks fail → parses stderr into concise summaries → recovery menu shown → user skips → message generation proceeds", async () => {
 		setupBaseFlow();
+		const biomeStderr =
+			"src/foo.ts:1:1 lint/nursery/noExcessiveLinesPerFile\n\n  ! This file has too many lines.";
 		vi.mocked(runAllChecks).mockResolvedValue({
 			ok: false,
 			results: [
 				{
 					ok: false,
-					tool: "eslint",
-					command: "eslint src/foo.ts",
+					tool: "biome",
+					command: "biome check src/foo.ts",
 					stdout: "",
-					stderr: "lint error",
+					stderr: biomeStderr,
 					files: ["src/foo.ts"],
 				},
 			],
 		});
+		const parsedErrors = [
+			{
+				tool: "biome",
+				message: "src/foo.ts:1:1 — lint/nursery/noExcessiveLinesPerFile",
+				raw: biomeStderr,
+			},
+		];
+		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("skipped");
 
 		await commitCommand({ retry: false, auto: false });
 
-		// Recovery menu was shown with parsed check errors
+		// parseHookErrors was called with combined stderr
+		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		// Recovery menu was shown with PARSED errors (concise 1-liners), not raw stderr
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
-			[expect.objectContaining({ tool: "eslint", message: "lint error" })],
-			expect.stringContaining("[eslint]"),
+			parsedErrors,
+			expect.stringContaining("[biome]"),
 		);
 		// User skipped → flow continued to message generation
 		expect(generateCommitMessage).toHaveBeenCalled();
@@ -412,21 +425,31 @@ describe("commitCommand check integration", () => {
 		expect(attemptCommit).toHaveBeenCalled();
 	});
 
-	it("checks fail → recovery menu shown → user cancels → process.exit(1)", async () => {
+	it("checks fail → parses stderr into concise summaries → recovery menu shown → user cancels → process.exit(1)", async () => {
 		setupBaseFlow();
+		const biomeStderr =
+			"src/foo.ts:1:1 lint/nursery/noExcessiveLinesPerFile\n\n  ! This file has too many lines.";
 		vi.mocked(runAllChecks).mockResolvedValue({
 			ok: false,
 			results: [
 				{
 					ok: false,
-					tool: "eslint",
-					command: "eslint src/foo.ts",
+					tool: "biome",
+					command: "biome check src/foo.ts",
 					stdout: "",
-					stderr: "lint error",
+					stderr: biomeStderr,
 					files: ["src/foo.ts"],
 				},
 			],
 		});
+		const parsedErrors = [
+			{
+				tool: "biome",
+				message: "src/foo.ts:1:1 — lint/nursery/noExcessiveLinesPerFile",
+				raw: biomeStderr,
+			},
+		];
+		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
 
 		// Spy on process.exit — throw so the test stops where the real process would
@@ -438,8 +461,11 @@ describe("commitCommand check integration", () => {
 			"process.exit called with 1",
 		);
 
-		expect(showCheckFailureMenu).toHaveBeenCalled();
-		expect(exitSpy).toHaveBeenCalledWith(1);
+		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		expect(showCheckFailureMenu).toHaveBeenCalledWith(
+			parsedErrors,
+			expect.stringContaining("[biome]"),
+		);
 		// Flow stopped — no message generation, no commit
 		expect(generateCommitMessage).not.toHaveBeenCalled();
 		expect(attemptCommit).not.toHaveBeenCalled();
