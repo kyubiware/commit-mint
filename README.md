@@ -1,11 +1,11 @@
-# commit-mint
+# 🌿 commit-mint
 
 [![npm version](https://img.shields.io/npm/v/@kyubiware/commit-mint.svg)](https://www.npmjs.com/package/@kyubiware/commit-mint)
 
 > Auto-group your changes into clean, conventional commits. AI handles the grouping, messages, and hook failures so you don't have to.
 
 ```
-┌  commit-mint
+┌  🌿 commit-mint
 │
 ◇  Files analyzed
 │
