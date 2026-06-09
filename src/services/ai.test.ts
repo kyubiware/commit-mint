@@ -448,13 +448,22 @@ describe("generateCommitMessage", () => {
 		expect(callArgs.max_tokens).toBeUndefined();
 	});
 
-	it("includes reasoning_format parsed in request params", async () => {
+	it("includes reasoning_format parsed for Groq reasoning models", async () => {
 		mockCreate.mockResolvedValue({
 			choices: [{ message: { content: "feat: test" } }],
 		});
-		await generateCommitMessage("some diff", { apiKey: "test_key" });
+		await generateCommitMessage("some diff", { apiKey: "test_key", provider: "groq" });
 		const callArgs = mockCreate.mock.calls[0][0];
 		expect(callArgs.reasoning_format).toBe("parsed");
+	});
+
+	it("omits reasoning_format for non-Groq providers", async () => {
+		mockCreate.mockResolvedValue({
+			choices: [{ message: { content: "feat: test" } }],
+		});
+		await generateCommitMessage("some diff", { apiKey: "test_key", provider: "mistral" });
+		const callArgs = mockCreate.mock.calls[0][0];
+		expect(callArgs.reasoning_format).toBeUndefined();
 	});
 
 	// ── Reasoning fallback ──
