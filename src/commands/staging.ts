@@ -2,7 +2,7 @@ import { log, outro, spinner } from "@clack/prompts";
 import { dim, red } from "kolorist";
 import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getChangedFiles, getRepoRoot, stageAll, stageFiles } from "../services/git.js";
-import { parseHookErrors } from "../services/hooks.js";
+import { parseCheckErrors } from "../services/hooks.js";
 import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
 import { debug } from "../utils/debug.js";
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js";
@@ -108,9 +108,11 @@ export async function runPreCommitChecks(
 
 	if (!checkResults.ok) {
 		const failed = checkResults.results.filter((r) => !r.ok);
-		const rawStderr = failed.map((r) => `[${r.tool}] ${r.stderr}`).join("\n");
-		const checkErrors = parseHookErrors(rawStderr);
-		const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
+		const rawOutput = failed
+			.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
+			.join("\n\n");
+		const checkErrors = parseCheckErrors(rawOutput);
+		const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
 		if (menuResult === "cancelled") {
 			process.exit(1);
 		}

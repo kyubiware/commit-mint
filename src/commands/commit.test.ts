@@ -45,6 +45,7 @@ vi.mock("../services/git.js", () => ({
 
 vi.mock("../services/hooks.js", () => ({
 	parseHookErrors: vi.fn(() => []),
+	parseCheckErrors: vi.fn(() => []),
 	parseToolChecks: vi.fn(() => []),
 }));
 
@@ -126,7 +127,7 @@ import {
 	stageAll,
 	stageFiles,
 } from "../services/git.js";
-import { parseHookErrors } from "../services/hooks.js";
+import { parseCheckErrors } from "../services/hooks.js";
 import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
 import { saveCachedCommit } from "../utils/cache.js";
 
@@ -407,13 +408,13 @@ describe("commitCommand check integration", () => {
 				raw: biomeStderr,
 			},
 		];
-		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
+		vi.mocked(parseCheckErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("skipped");
 
 		await commitCommand({ retry: false, auto: false });
 
-		// parseHookErrors was called with combined stderr
-		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		// parseCheckErrors was called with combined output
+		expect(parseCheckErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
 		// Recovery menu was shown with PARSED errors (concise 1-liners), not raw stderr
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,
@@ -449,7 +450,7 @@ describe("commitCommand check integration", () => {
 				raw: biomeStderr,
 			},
 		];
-		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
+		vi.mocked(parseCheckErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
 
 		// Spy on process.exit — throw so the test stops where the real process would
@@ -461,7 +462,7 @@ describe("commitCommand check integration", () => {
 			"process.exit called with 1",
 		);
 
-		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		expect(parseCheckErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,
 			expect.stringContaining("[biome]"),
