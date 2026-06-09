@@ -168,6 +168,63 @@ export function formatErrorReport(errors: HookError[]): string {
 	return sections.join("\n\n");
 }
 
+/**
+ * Parse cmint check output into structured errors.
+ * Check output uses [tool] prefix format (built by callers in auto-group.ts / staging.ts).
+ * This is distinct from parseHookErrors which handles raw git hook stderr.
+ */
+export function parseCheckErrors(output: string): HookError[] {
+	if (!output.trim()) return [];
+
+	const errors: HookError[] = [];
+	const lines = output.split("\n");
+
+	let currentTool = "";
+	let currentLines: string[] = [];
+
+	const flush = () => {
+		if (currentTool && currentLines.length > 0) {
+			const message = currentLines.join("\n").trim();
+			if (message) {
+				errors.push({ tool: currentTool, message, raw: currentLines.join("\n") });
+			}
+		}
+		currentTool = "";
+		currentLines = [];
+	};
+
+	for (const line of lines) {
+		const match = line.match(/^\[(\S+)\]\s*(.*)/);
+		if (match) {
+			// New [tool] block — flush previous
+			flush();
+			currentTool = match[1];
+			const rest = match[2].trim();
+			if (rest) {
+				currentLines.push(rest);
+			}
+		} else if (currentTool) {
+			// Continuation line for current [tool] block
+			currentLines.push(line);
+		} else {
+			// No [tool] prefix — accumulate as raw
+			currentLines.push(line);
+		}
+	}
+
+	flush();
+
+	// If no [tool] prefixed blocks found, fall back to single raw error
+	if (errors.length === 0) {
+		const trimmed = output.trim();
+		if (trimmed) {
+			errors.push({ tool: "checks", message: trimmed, raw: output });
+		}
+	}
+
+	return errors;
+}
+
 // ── Tool check parsing (success case) ──────────────────────────────
 
 export interface ToolCheck {

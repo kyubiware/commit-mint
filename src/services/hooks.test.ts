@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractToolName, parseHookErrors, parseToolChecks } from "./hooks.js";
+import { extractToolName, parseCheckErrors, parseHookErrors, parseToolChecks } from "./hooks.js";
 
 describe("extractToolName", () => {
 	describe("direct invocations (existing behavior)", () => {
@@ -329,6 +329,63 @@ describe("parseHookErrors", () => {
 			expect(errors[0].tool).toBe("git hooks");
 			expect(errors[0].message).toContain("something completely unexpected happened");
 		});
+	});
+});
+
+describe("parseCheckErrors", () => {
+	it("parses [tool] prefixed check output", () => {
+		const output = "[eslint] ESLint found too many warnings (maximum: 0).";
+		const errors = parseCheckErrors(output);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].tool).toBe("eslint");
+		expect(errors[0].message).toBe("ESLint found too many warnings (maximum: 0).");
+	});
+
+	it("parses multiple [tool] prefixed lines", () => {
+		const output = [
+			"[eslint] ESLint found too many warnings (maximum: 0).",
+			"[tsc] error TS2322: Type 'string' is not assignable to type 'number'.",
+		].join("\n");
+		const errors = parseCheckErrors(output);
+		expect(errors).toHaveLength(2);
+		expect(errors[0].tool).toBe("eslint");
+		expect(errors[0].message).toContain("too many warnings");
+		expect(errors[1].tool).toBe("tsc");
+		expect(errors[1].message).toContain("TS2322");
+	});
+
+	it("handles multiline [tool] blocks where only first line has prefix", () => {
+		const output = [
+			"[eslint]",
+			"/project/src/foo.ts",
+			"  5:1  error  Missing semicolon  semi",
+			"  10:3  warning  Unexpected any  no-explicit-any",
+			"",
+			"✖ 2 problems (1 error, 1 warning)",
+			"ESLint found too many warnings (maximum: 0).",
+		].join("\n");
+		const errors = parseCheckErrors(output);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].tool).toBe("eslint");
+		// Should contain the full output including details
+		expect(errors[0].message).toContain("foo.ts");
+		expect(errors[0].message).toContain("Missing semicolon");
+	});
+
+	it("falls back to 'checks' tool for lines without [tool] prefix", () => {
+		const output = "something went wrong with an unknown tool";
+		const errors = parseCheckErrors(output);
+		expect(errors).toHaveLength(1);
+		expect(errors[0].tool).toBe("checks");
+		expect(errors[0].message).toContain("something went wrong");
+	});
+
+	it("returns empty array for empty input", () => {
+		expect(parseCheckErrors("")).toEqual([]);
+	});
+
+	it("returns empty array for whitespace-only input", () => {
+		expect(parseCheckErrors("   \n  \n ")).toEqual([]);
 	});
 });
 
