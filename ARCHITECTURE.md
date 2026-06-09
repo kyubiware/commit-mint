@@ -11,28 +11,27 @@
 - Interactive staging menu for multi-file workflows (select files, auto-group, run checks from cmint config)
 - Recursive recovery menu that loops until success or cancellation
 - AI-powered auto-grouping of changed files into logical commits
-- Code review via OpenCode or Groq (in-flow during message review or standalone `--review`)
 
 ## Layers
 
 **CLI Layer:**
 - Purpose: Parse argv and dispatch to commands
 - Location: `src/cli.ts`
-- Contains: Flag definitions (retry, all, message, hint, review, debug), command routing to `commitCommand`, `configCommand`, or `reviewCommand`
+- Contains: Flag definitions (retry, all, message, hint, debug), command routing to `commitCommand` or `configCommand`
 - Depends on: `cleye` library
 - Used by: Package binary entry (`dist/cli.mjs`)
 
 **Commands Layer:**
 - Purpose: Orchestrate top-level workflows (commit, config, review, auto-group)
 - Location: `src/commands/`
-- Contains: `commit.ts` (main lifecycle), `config.ts` (config get/set), `auto-group.ts` (multi-commit flow), `review.ts` (code review)
+- Contains: `commit.ts` (main lifecycle), `config.ts` (config get/set), `auto-group.ts` (multi-commit flow)
 - Depends on: Services, UI, Utils
 - Used by: CLI layer
 
 **Services Layer:**
 - Purpose: Encapsulate external system interactions and business logic
 - Location: `src/services/`
-- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `review-ai.ts` (AI code review), `checks.ts` (User-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution)
+- Contains: `git.ts` (git operations), `ai.ts` (Groq AI generation), `hooks.ts` (hook error parsing), `config.ts` (INI config), `clipboard.ts` (cross-platform clipboard), `grouping.ts` (AI file grouping), `checks.ts` (User-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution)
 - Depends on: `execa`, `groq-sdk`, `ini`, Node.js built-ins
 - Used by: Commands layer
 
@@ -70,7 +69,7 @@
    - Excluded-only case: builds hardcoded message ("chore: update lockfile" / "chore: update generated files"), caches it, commits directly
 8. Ensure API key exists (prompt if missing) — `src/services/config.ts:getApiKey` / `setConfigValue`
 9. Generate commit message via AI with 3-tier diff compression — `src/services/ai.ts:generateCommitMessage`
-10. Present message review (use-as-is / edit / review with OpenCode / cancel) — `src/ui/review-message.ts:reviewCommitMessage`
+10. Present message review (use-as-is / edit / cancel) — `src/ui/review-message.ts:reviewCommitMessage`
 11. Cache commit message — `src/utils/cache.ts:saveCachedCommit`
 12. Attempt `git commit -m` with real-time stderr collection — `src/services/git.ts:attemptCommit`
 13. On success: print "Done." — `src/commands/commit.ts`
@@ -102,15 +101,6 @@
 5. Show grouping confirmation — `src/ui/grouping.ts:showGroupingConfirmation`
 6. Sequential multi-commit loop: for each group, `resetStaging` → `stageFiles` → `getStagedDiff` → `generateMessage` → `reviewCommitMessage` → `saveCachedCommit` → `attemptCommit`; on hook failure, show `showRecoveryMenu` and stop sequence
 7. Each group commit shows progress — `src/ui/grouping.ts:showGroupProgress`
-
-**Code Review Flow:**
-
-1. `cmint --review` / `-R` flag — `src/cli.ts`
-2. Assert git repo, stage all, get diff — `src/commands/review.ts:reviewCommand`
-3. Check if OpenCode is available (`which opencode`) — `isOpenCodeAvailable`
-4. OpenCode available: build review prompt with diff, run `opencode run <prompt> --dir <repo>`
-5. OpenCode unavailable: use Groq SDK with `generateCodeReview` — `src/services/review-ai.ts`
-6. Show findings as structured note; offer clipboard copy
 
 ## Key Abstractions
 
@@ -194,7 +184,7 @@
 **cmint CLI:**
 - Location: `src/cli.ts`
 - Triggers: User runs `cmint` or `cmint --help`
-- Responsibilities: Parse argv, set debug flag, dispatch to `commitCommand`, `configCommand`, or `reviewCommand`
+- Responsibilities: Parse argv, set debug flag, dispatch to `commitCommand` or `configCommand`
 
 **commitCommand:**
 - Location: `src/commands/commit.ts:30`
@@ -205,11 +195,6 @@
 - Location: `src/commands/config.ts:4`
 - Triggers: `cmint config get <key>`, `cmint config set <key>=<value>`
 - Responsibilities: Read/write `~/.commit-mint` INI values
-
-**reviewCommand:**
-- Location: `src/commands/review.ts:9`
-- Triggers: `cmint --review`, `cmint -R`
-- Responsibilities: Stage all tracked files, run code review via OpenCode or Groq, display findings
 
 **runAutoGroupFlow:**
 - Location: `src/commands/auto-group.ts:32`

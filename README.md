@@ -68,7 +68,6 @@ On first run, you'll be prompted for a `GROQ_API_KEY` if it's not set in `~/.com
 - **Hook failures handled in-flow.** When pre-commit hooks fail, you get a parsed error summary and a menu to copy, skip, retry, or edit. No raw stderr dumps.
 - **Built-in pre-commit checks.** Define checks in a cmint config file and run them before AI generation. A failing check never wastes an API call.
 - **Message caching on failure.** A failed commit caches its message. Fix the error, run `cmint --retry`, and pick up exactly where you left off.
-- **Review before you commit.** Every message can be accepted, edited, or reviewed with OpenCode before it hits the repo.
 
 ## Auto mode (`-a`)
 
@@ -111,9 +110,6 @@ cmint -H "refactoring auth module"
 # Retry last failed commit (uses cached message)
 cmint -r
 
-# Review staged changes with AI
-cmint -R
-
 # Skip pre-commit checks
 cmint -n
 
@@ -132,7 +128,6 @@ cmint config set model openai/gpt-oss-20b
 | `-m, --message` | Provide a commit message directly (skip AI) |
 | `-H, --hint` | Add context hint for AI message generation |
 | `-r, --retry` | Retry the last failed commit |
-| `-R, --review` | Review staged changes with a coding model |
 | `-n, --noCheck` | Skip pre-commit checks |
 | `-d, --debug` | Enable debug output |
 | `-h, --help` | Show help |
@@ -144,7 +139,6 @@ Before every commit, choose what to do with the generated message:
 
 - **Use as-is** — accept the AI-generated message
 - **Edit** — modify the message in a prompt
-- **Review with OpenCode** — run a code review on staged changes before committing
 - **Cancel** — exit (message is cached for `--retry`)
 
 ## Recovery menu
@@ -236,10 +230,6 @@ When a check fails, you get a menu with three options:
 
 Pass `--noCheck` or `-n` to skip checks entirely.
 
-## Code review
-
-Run `cmint --review` or `cmint -R` to review staged changes without committing. commit-mint checks for [OpenCode](https://github.com/opencode-ai/opencode) first, then falls back to Groq API. The review covers bugs, security issues, performance problems, and edge cases.
-
 ## Configuration
 
 Stored in `~/.commit-mint` (INI format):
@@ -278,7 +268,6 @@ cmint --help
     --auto, -a       Auto-group files into commits, accept all messages (default: false)
     --message, -m    Provide a commit message directly (skip AI generation)
     --hint, -H       Add context hint for AI commit message generation
-    --review, -R     Review staged changes with a coding model (default: false)
     --noCheck, -n    Skip pre-commit checks (default: false)
     --debug, -d      Enable debug output (default: false)
     --help, -h       Show help
@@ -301,13 +290,11 @@ commit-mint/
 │   ├── commands/
 │   │   ├── commit.ts       # Main commit flow orchestrator
 │   │   ├── auto-group.ts   # Auto-group multi-commit flow
-│   │   ├── review.ts       # Code review command
 │   │   └── config.ts       # Config get/set subcommand
 │   ├── services/
 │   │   ├── git.ts          # Git operations (stage, commit, diff, HEAD)
 │   │   ├── ai.ts           # Groq AI commit message generation (3-tier diff compression)
 │   │   ├── grouping.ts     # AI-powered file grouping into logical commits
-│   │   ├── review-ai.ts    # AI code review via Groq
 │   │   ├── hooks.ts        # Hook error parser (lint-staged, biome, tsc, etc.)
 │   │   ├── checks.ts       # Pre-commit checks via cmint config files (glob matching, command execution)
 │   │   ├── config.ts       # INI config read/write at ~/.commit-mint
@@ -315,7 +302,7 @@ commit-mint/
 │   ├── ui/
 │   │   ├── menu.ts         # Interactive recovery TUI + staging menu
 │   │   ├── grouping.ts     # Grouping confirmation UI
-│   │   └── review-message.ts # Message review step (use/edit/review/cancel)
+│   │   └── review-message.ts # Message review step (use/edit/cancel)
 │   └── utils/
 │       ├── cache.ts        # Commit message persistence at ~/.cache/commit-mint/
 │       └── debug.ts        # Timestamped debug logging to stderr

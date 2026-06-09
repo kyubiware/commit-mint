@@ -12,8 +12,7 @@ commit-mint/
 │   │   ├── auto-group.ts       # Auto-group multi-commit flow
 │   │   ├── auto-group.test.ts  # Auto-group flow tests
 │   │   ├── config.ts           # `cmint config get/set` subcommand
-│   │   ├── review.ts           # Code review command (OpenCode/Groq)
-│   │   └── review.test.ts      # Review command tests
+│   │   └── config.ts           # Config get/set subcommand
 │   ├── services/
 │   │   ├── ai.ts               # Groq AI commit message generation (3-tier diff compression)
 │   │   ├── ai.test.ts          # AI service tests
@@ -25,12 +24,11 @@ commit-mint/
 │   │   ├── clipboard.test.ts   # Clipboard service tests
 │   │   ├── grouping.ts         # AI-powered file grouping into logical commits
 │   │   ├── grouping.test.ts    # Grouping service tests
-│   │   ├── review-ai.ts        # AI code review via Groq
 │   │   └── lint-staged.ts      # lint-staged config detection and runner
 │   ├── ui/
 │   │   ├── menu.ts             # Interactive recovery TUI + staging menu
 │   │   ├── menu.test.ts        # Menu UI tests
-│   │   ├── review-message.ts   # Message review step (use-as-is/edit/review/cancel) with inline code review
+│   │   ├── review-message.ts   # Message review step (use-as-is/edit/cancel)
 │   │   └── grouping.ts         # Grouping confirmation UI + progress display
 │   └── utils/
 │       ├── cache.ts            # Commit message persistence at ~/.cache/commit-mint/
@@ -53,17 +51,17 @@ commit-mint/
 **`src/commands/`:**
 - Purpose: Top-level command orchestrators for the CLI
 - Contains: Async functions exported as command handlers
-- Key files: `commit.ts` (main lifecycle with staging menu), `auto-group.ts` (multi-commit auto-group flow), `review.ts` (standalone code review), `config.ts` (config get/set)
+- Key files: `commit.ts` (main lifecycle with staging menu), `auto-group.ts` (multi-commit auto-group flow), `config.ts` (config get/set)
 
 **`src/services/`:**
 - Purpose: Encapsulated system integrations and business logic
-- Contains: Git operations, AI generation, hook parsing, config I/O, clipboard, file grouping, code review AI, lint-staged runner
-- Key files: `git.ts` (all git subprocess calls, ChangedFile/DiffResult types), `ai.ts` (Groq SDK + 3-tier diff compression + think tag stripping + reasoning fallback), `hooks.ts` (error parsers + tool check summary), `config.ts` (INI config), `clipboard.ts` (shell-out clipboard, returns boolean), `grouping.ts` (AI file grouping + exclude filtering + lockfile companion promotion), `review-ai.ts` (code review via Groq with compressDiff), `lint-staged.ts` (config file detection + npx lint-staged runner)
+- Contains: Git operations, AI generation, hook parsing, config I/O, clipboard, file grouping, lint-staged runner
+- Key files: `git.ts` (all git subprocess calls, ChangedFile/DiffResult types), `ai.ts` (Groq SDK + 3-tier diff compression + think tag stripping + reasoning fallback), `hooks.ts` (error parsers + tool check summary), `config.ts` (INI config), `clipboard.ts` (shell-out clipboard, returns boolean), `grouping.ts` (AI file grouping + exclude filtering + lockfile companion promotion), `lint-staged.ts` (config file detection + npx lint-staged runner)
 
 **`src/ui/`:**
 - Purpose: Interactive terminal user interface
 - Contains: Recovery TUI, staging menu, message review step, grouping confirmation UI
-- Key files: `menu.ts` (5-option recovery menu with clipboard state tracking + staging menu with file selection/auto-group/lint-staged), `review-message.ts` (4-option message review: use-as-is/edit/review/cancel, inline code review runner), `grouping.ts` (grouping confirmation with file list + commit group progress display)
+- Key files: `menu.ts` (5-option recovery menu with clipboard state tracking + staging menu with file selection/auto-group/lint-staged), `review-message.ts` (3-option message review: use-as-is/edit/cancel), `grouping.ts` (grouping confirmation with file list + commit group progress display)
 
 **`src/utils/`:**
 - Purpose: Generic utilities with no business logic or side effects
@@ -82,7 +80,7 @@ commit-mint/
 
 ## Key File Locations
 
-**Entry Points:** `src/cli.ts`: Shebang script that parses argv via `cleye`, sets debug mode, dispatches to `commitCommand`, `reviewCommand`, or `configCommand`
+**Entry Points:** `src/cli.ts`: Shebang script that parses argv via `cleye`, sets debug mode, dispatches to `commitCommand` or `configCommand`
 
 **Configuration:** `src/services/config.ts`: Reads/writes INI at `~/.commit-mint`, merged with defaults (model, locale, max-length, type, timeout, proxy). `getApiKey()` checks `$GROQ_API_KEY` env var first, then config file
 
@@ -98,7 +96,7 @@ commit-mint/
 
 ## Naming Conventions
 
-**Files:** `camelCase.ts` — `commit.ts`, `auto-group.ts`, `review.ts`, `config.ts`, `hooks.ts`, `clipboard.ts`, `grouping.ts`, `cache.ts`, `debug.ts`. Test files use `.test.ts` suffix: `commit.test.ts`, `ai.test.ts`, `git.test.ts`, `debug.test.ts`, `menu.test.ts`, `grouping.test.ts`, `clipboard.test.ts`
+**Files:** `camelCase.ts` — `commit.ts`, `auto-group.ts`, `config.ts`, `hooks.ts`, `clipboard.ts`, `grouping.ts`, `cache.ts`, `debug.ts`. Test files use `.test.ts` suffix: `commit.test.ts`, `ai.test.ts`, `git.test.ts`, `debug.test.ts`, `menu.test.ts`, `grouping.test.ts`, `clipboard.test.ts`
 
 **Directories:** Single-word lowercase: `commands/`, `services/`, `ui/`, `utils/`
 
@@ -121,8 +119,6 @@ commit-mint/
 **New staging menu option:** `src/ui/menu.ts` — add to the options array in `select()` in `showStagingMenu`, return the appropriate type from `StagingChoice | "autogroup" | "lint-staged" | null`
 
 **New AI model or prompt strategy:** `src/services/ai.ts` — extend `generateCommitMessage`, `buildSystemPrompt`, or `compressDiff`
-
-**New code review provider:** `src/commands/review.ts` — add a new `reviewWith*` function; wire into the if/else in `reviewCommand`. `src/services/review-ai.ts` for Groq-specific review logic
 
 **New grouping strategy:** `src/services/grouping.ts` — extend `generateGroups` or `validateGroups`; update `filterExcludedFiles` for new exclude patterns
 
