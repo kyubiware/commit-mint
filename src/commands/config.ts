@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import { bold, dim, green } from "kolorist";
-import { readConfig, writeConfig } from "../services/config.js";
+import { getModelForProvider, readConfig, writeConfig } from "../services/config.js";
 import {
 	formatProviderName,
 	isValidProvider,
@@ -22,11 +22,16 @@ function buildConfigDisplay(config: Record<string, string | undefined>): string 
 		: "groq";
 	const keyName = PROVIDER_ENV_KEYS[provider];
 	const apiKey = config[keyName];
+	const effectiveModel = getModelForProvider(
+		config as import("../services/config.js").Config,
+		provider,
+		PROVIDER_CONFIGS[provider].defaultModel,
+	);
 
 	const lines = [
 		`Provider:     ${bold(formatProviderName(provider))}`,
 		`API Key:      ${maskKey(apiKey)}`,
-		`Model:        ${config.model ?? "(none)"}`,
+		`Model:        ${effectiveModel}`,
 		`Locale:       ${config.locale ?? "en"}`,
 		`Max Length:   ${config["max-length"] ?? "100"}`,
 		`Commit Type:  ${config.type || dim("(none)")}`,
@@ -98,11 +103,28 @@ function getSettingHandlers(
 		provider: async () => {
 			const result = await promptProvider();
 			if (p.isCancel(result)) return result;
-			await writeConfig({ provider: result as string });
-			debug("config: provider set to %s", result);
+			const newProvider = result as ProviderName;
+			const newDefaultModel = PROVIDER_CONFIGS[newProvider].defaultModel;
+			await writeConfig({ provider: newProvider, model: newDefaultModel });
+			debug("config: provider set to %s, model set to %s", newProvider, newDefaultModel);
+
+			// Prompt for API key if not set for the new provider
+			const keyName = PROVIDER_ENV_KEYS[newProvider];
+			const updatedConfig = (await readConfig()) as Record<string, string | undefined>;
+			if (!updatedConfig[keyName]) {
+				const keyResult = await promptApiKey(newProvider);
+				if (p.isCancel(keyResult)) return keyResult;
+			}
 		},
 		apikey: async () => promptApiKey(provider),
-		model: async () => promptTextSetting("Model ID:", "model", config.model),
+		model: async () => {
+			const effectiveModel = getModelForProvider(
+				config as import("../services/config.js").Config,
+				provider,
+				PROVIDER_CONFIGS[provider].defaultModel,
+			);
+			return promptTextSetting("Model ID:", "model", effectiveModel);
+		},
 		locale: async () => promptTextSetting("Locale (e.g. en, ja, ko):", "locale", config.locale),
 		maxlen: async () =>
 			promptTextSetting(
@@ -137,6 +159,11 @@ async function editSettingsLoop(initialConfig: Record<string, string | undefined
 		// Re-read config to reflect changes from previous edits
 		config = (await readConfig()) as Record<string, string | undefined>;
 		const provider = getProvider(config);
+		const effectiveModel = getModelForProvider(
+			config as import("../services/config.js").Config,
+			provider,
+			PROVIDER_CONFIGS[provider].defaultModel,
+		);
 
 		const setting = await p.select({
 			message: "Select a setting to edit:",
@@ -150,7 +177,7 @@ async function editSettingsLoop(initialConfig: Record<string, string | undefined
 					value: "apikey",
 				},
 				{
-					label: `Model  ${dim(`(${config.model ?? "(none)"})`)}`,
+					label: `Model  ${dim(`(${effectiveModel})`)}`,
 					value: "model",
 				},
 				{

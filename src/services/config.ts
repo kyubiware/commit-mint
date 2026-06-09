@@ -3,11 +3,16 @@ import os from "node:os";
 import { join } from "node:path";
 import ini from "ini";
 import { debug } from "../utils/debug.js";
-import { formatProviderName, PROVIDER_ENV_KEYS, type ProviderName } from "./provider.js";
+import {
+	formatProviderName,
+	PROVIDER_CONFIGS,
+	PROVIDER_ENV_KEYS,
+	type ProviderName,
+} from "./provider.js";
 
 const CONFIG_PATH = join(os.homedir(), ".commit-mint");
 
-interface Config {
+export interface Config {
 	GROQ_API_KEY?: string;
 	CEREBRAS_API_KEY?: string;
 	MISTRAL_API_KEY?: string;
@@ -105,11 +110,26 @@ export async function getProviderApiKey(provider: string): Promise<string> {
 	);
 }
 
+/** Check if a model name is the default for a provider OTHER than the given one. */
+function isOtherProviderDefault(model: string, provider: string): boolean {
+	for (const [name, config] of Object.entries(PROVIDER_CONFIGS)) {
+		if (name !== provider && config.defaultModel === model) return true;
+	}
+	return false;
+}
+
 export function getModelForProvider(
 	config: Config,
 	provider: string,
 	defaultModel: string,
 ): string {
 	const modelKey = `model_${provider}` as keyof Config;
-	return config[modelKey] ?? config.model ?? defaultModel;
+	const providerModel = config[modelKey];
+	if (providerModel) return providerModel;
+
+	const globalModel = config.model;
+	// Skip global model if it's another provider's default (cross-provider leak)
+	if (globalModel && !isOtherProviderDefault(globalModel, provider)) return globalModel;
+
+	return defaultModel;
 }
