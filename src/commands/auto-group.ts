@@ -100,9 +100,7 @@ export async function runAutoGroupFlow(
 			}
 			// "skipped" → continue to grouping and commits
 		} else if (checkResults.results.length > 0) {
-			for (const r of checkResults.results) {
-				log.info(`  ${green("✓")} ${r.tool}`);
-			}
+			log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
 		}
 	}
 
