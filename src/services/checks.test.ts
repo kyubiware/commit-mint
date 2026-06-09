@@ -646,7 +646,7 @@ describe("runAllChecks", () => {
 		expect(mockExeca).toHaveBeenCalledTimes(2);
 	});
 
-	it("function commands run even when no files match the glob", async () => {
+	it("function commands are skipped when no files match the glob", async () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
 		await writeFile(
 			join(tmpDir, ".cmintrc.ts"),
@@ -659,20 +659,11 @@ describe("runAllChecks", () => {
 			.mockRejectedValueOnce(new Error("ENOENT"))
 			.mockRejectedValueOnce(new Error("ENOENT"))
 			.mockResolvedValueOnce(undefined);
-		mockExeca.mockResolvedValue({
-			failed: false,
-			stdout: "",
-			stderr: "",
-			all: "",
-		});
 
-		// No .ts files, but function command should still run
+		// No .ts files — function command should NOT run
 		const result = await runAllChecks(tmpDir, ["README.md"], 5000);
 		expect(result.ok).toBe(true);
-		expect(result.results).toHaveLength(1);
-		expect(mockExeca).toHaveBeenCalledWith(
-			"tsc --noEmit",
-			expect.objectContaining({ shell: true }),
-		);
+		expect(result.results).toHaveLength(0);
+		expect(mockExeca).not.toHaveBeenCalled();
 	});
 });

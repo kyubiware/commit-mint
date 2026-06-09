@@ -257,7 +257,7 @@ export async function runAllChecks(
 		const matchedFiles = matchFiles(glob, stagedFiles);
 		const isFunction = typeof commands === "function";
 
-		if (matchedFiles.length === 0 && !isFunction) {
+		if (matchedFiles.length === 0) {
 			debug("runAllChecks: no files matched pattern '%s'", glob);
 			continue;
 		}
