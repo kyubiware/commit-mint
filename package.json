@@ -1,6 +1,6 @@
 {
 	"name": "@kyubiware/commit-mint",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"description": "🌿 A commit tool that actually handles hook failures",
 	"type": "module",
 	"bin": {
