@@ -87,10 +87,13 @@ export async function runAutoGroupFlow(
 		const repoRoot = await getRepoRoot();
 		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path);
 		debug("Running user checks on %d files...", allFiles.length);
+		const ck = spinner();
+		ck.start("Running checks...");
 		const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
 		debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
 		if (!checkResults.ok) {
+			ck.stop(`${checkResults.results.filter((r) => !r.ok).length} check(s) failed`);
 			const failed = checkResults.results.filter((r) => !r.ok);
 			const rawStderr = failed.map((r) => `[${r.tool}] ${r.stderr}`).join("\n");
 			const checkErrors = parseHookErrors(rawStderr);
@@ -99,8 +102,11 @@ export async function runAutoGroupFlow(
 				return "cancelled";
 			}
 			// "skipped" → continue to grouping and commits
-		} else if (checkResults.results.length > 0) {
-			log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
+		} else {
+			ck.stop("All checks passed");
+			if (checkResults.results.length > 0) {
+				log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
+			}
 		}
 	}
 
