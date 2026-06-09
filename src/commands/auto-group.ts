@@ -28,12 +28,7 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js";
-import {
-	showChangedFilesTable,
-	showGroupingConfirmation,
-	showGroupingSummary,
-	showGroupProgress,
-} from "../ui/grouping.js";
+import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
 import { type RecoveryResult, showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { saveCachedCommit } from "../utils/cache.js";
@@ -151,8 +146,7 @@ export async function runAutoGroupFlow(
 	const validatedGroups = validateGroups(result.groups, included);
 	s.stop("Files analyzed");
 
-	showChangedFilesTable(included);
-	showGroupingSummary(validatedGroups);
+	showGroupedFiles(validatedGroups, included);
 
 	// Step 5: Show grouping confirmation (skip in auto mode)
 	if (flags.auto) {

@@ -85,3 +85,26 @@ export function showGroupingSummary(groups: CommitGroup[]): void {
 	);
 	p.note(lines.join("\n"), "Commit groups");
 }
+
+/** Display combined view: files with status indicators grouped by commit group */
+export function showGroupedFiles(groups: CommitGroup[], changedFiles: ChangedFile[]): void {
+	const statusMap = new Map(changedFiles.map((f) => [f.path, f.status]));
+
+	const lines: string[] = [];
+
+	for (let i = 0; i < groups.length; i++) {
+		const group = groups[i];
+		lines.push(
+			`${bold(group.name)} ${dim("—")} ${group.files.length} file${group.files.length !== 1 ? "s" : ""}`,
+		);
+		for (const file of group.files) {
+			const status = statusMap.get(file) ?? "M";
+			lines.push(`  ${statusLabel(status)}  ${file}`);
+		}
+		if (i < groups.length - 1) {
+			lines.push("");
+		}
+	}
+
+	p.note(lines.join("\n"), "Commit groups");
+}

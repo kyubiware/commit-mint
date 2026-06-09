@@ -81,10 +81,9 @@ vi.mock("../services/grouping.js", () => ({
 }));
 
 vi.mock("../ui/grouping.js", () => ({
-	showChangedFilesTable: vi.fn(),
+	showGroupedFiles: vi.fn(),
 	showGroupingConfirmation: vi.fn(),
 	showGroupProgress: vi.fn(),
-	showGroupingSummary: vi.fn(),
 }));
 
 vi.mock("../ui/menu.js", () => ({
