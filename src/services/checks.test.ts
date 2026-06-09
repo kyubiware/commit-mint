@@ -605,8 +605,11 @@ describe("runAllChecks", () => {
 		const result = await runAllChecks(tmpDir, ["src/foo.ts"], 5000);
 		expect(result.ok).toBe(true);
 		expect(result.results).toHaveLength(1);
-		// Function returned "tsc --noEmit" — no file args appended
-		expect(mockExeca).toHaveBeenCalledWith("tsc", ["--noEmit"], expect.any(Object));
+		// Function returned "tsc --noEmit" — run via shell
+		expect(mockExeca).toHaveBeenCalledWith(
+			"tsc --noEmit",
+			expect.objectContaining({ shell: true }),
+		);
 	});
 
 	it("function command returning array runs multiple commands", async () => {
@@ -667,6 +670,9 @@ describe("runAllChecks", () => {
 		const result = await runAllChecks(tmpDir, ["README.md"], 5000);
 		expect(result.ok).toBe(true);
 		expect(result.results).toHaveLength(1);
-		expect(mockExeca).toHaveBeenCalledWith("tsc", ["--noEmit"], expect.any(Object));
+		expect(mockExeca).toHaveBeenCalledWith(
+			"tsc --noEmit",
+			expect.objectContaining({ shell: true }),
+		);
 	});
 });

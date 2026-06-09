@@ -115,12 +115,11 @@ export async function runCommand(
 	repoRoot?: string,
 ): Promise<CheckResult> {
 	debug("runCommand: %s (timeout: %dms)", command, timeout);
-	const parts = command.split(" ");
-	const bin = parts[0];
-	const args = parts.slice(1);
+	const bin = command.split(" ")[0];
 
 	try {
-		const result = await execa(bin, args, {
+		const result = await execa(command, {
+			shell: true,
 			reject: false,
 			timeout,
 			all: true,
