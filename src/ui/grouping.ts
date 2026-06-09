@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
-import { bold, cyan, dim, green } from "kolorist";
+import { bold, cyan, dim, green, red, yellow } from "kolorist";
+import type { ChangedFile } from "../services/git.js";
 import type { CommitGroup } from "../services/grouping.js";
 import { debug } from "../utils/debug.js";
 
@@ -49,4 +50,38 @@ export async function showGroupingConfirmation(
 
 export function showGroupProgress(current: number, total: number, groupName: string): void {
 	p.log.info(`Commit group ${current} of ${total}: ${cyan(`"${groupName}"`)}`);
+}
+
+const statusLabel = (status: string): string => {
+	switch (status) {
+		case "M":
+			return yellow("M");
+		case "A":
+			return green("A");
+		case "D":
+			return red("D");
+		case "?":
+		case "??":
+			return cyan("?");
+		default:
+			return dim(status);
+	}
+};
+
+/** Display a table of changed files with status indicators */
+export function showChangedFilesTable(files: ChangedFile[]): void {
+	if (files.length === 0) return;
+
+	const lines = files.map((f) => `  ${statusLabel(f.status)}  ${f.path}`);
+	p.note(lines.join("\n"), `${files.length} file${files.length !== 1 ? "s" : ""} changed`);
+}
+
+/** Display a compact grouping summary (only shown when >1 group) */
+export function showGroupingSummary(groups: CommitGroup[]): void {
+	if (groups.length <= 1) return;
+
+	const lines = groups.map(
+		(g) => `${bold(g.name)} ${dim("—")} ${g.files.length} file${g.files.length !== 1 ? "s" : ""}`,
+	);
+	p.note(lines.join("\n"), "Commit groups");
 }

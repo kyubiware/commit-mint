@@ -28,7 +28,12 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js";
-import { showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
+import {
+	showChangedFilesTable,
+	showGroupingConfirmation,
+	showGroupingSummary,
+	showGroupProgress,
+} from "../ui/grouping.js";
 import { type RecoveryResult, showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { saveCachedCommit } from "../utils/cache.js";
@@ -94,6 +99,10 @@ export async function runAutoGroupFlow(
 				return "cancelled";
 			}
 			// "skipped" → continue to grouping and commits
+		} else if (checkResults.results.length > 0) {
+			for (const r of checkResults.results) {
+				log.info(`  ${green("✓")} ${r.tool}`);
+			}
 		}
 	}
 
@@ -137,6 +146,9 @@ export async function runAutoGroupFlow(
 	);
 	const validatedGroups = validateGroups(result.groups, included);
 	s.stop("Files analyzed");
+
+	showChangedFilesTable(included);
+	showGroupingSummary(validatedGroups);
 
 	// Step 5: Show grouping confirmation (skip in auto mode)
 	if (flags.auto) {
