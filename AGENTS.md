@@ -1,32 +1,26 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-05-19
-**Commit:** df07bf9
+**Generated:** 2026-06-09
+**Commit:** 476246b
 **Branch:** main
 
 ## OVERVIEW
 
-CLI tool (`cmint`) that wraps `git commit` with AI-generated messages (Groq SDK) and an interactive recovery menu for pre-commit hook failures. TypeScript/ESM, built with tsdown.
+CLI tool (`cmint`) that wraps `git commit` with AI-generated messages (multi-provider: Groq, Cerebras, Mistral) and an interactive recovery menu for pre-commit hook failures. TypeScript/ESM, built with tsdown.
 
 ## STRUCTURE
 
 ```
 src/
-├── cli.ts                  # Entry point (cleye CLI parser, flags: --retry/-r, --all/-a, --message/-m, --hint/-H, --debug/-d)
-├── commands/
-│   ├── commit.ts           # Main commit flow: stage → generate → review → commit → recover
-│   ├── commit.test.ts      # Commit flow unit tests (exhaustive mock isolation)
-│   └── config.ts           # `cmint config get/set` subcommand (⚠️ uses console.log)
-├── services/
-│   ├── ai.ts               # Groq AI message generator (3-tier diff compression, conventional commit validation + retry)
-│   ├── ai.test.ts          # AI service tests (Groq SDK mock class hierarchy)
-│   ├── git.ts              # Git operations (stage, diff, commit, HEAD)
-│   ├── hooks.ts            # Hook error parser (lint-staged, biome, tsc, vitest, eslint)
-│   ├── config.ts           # INI config at ~/.commit-mint
-│   ├── clipboard.ts        # Cross-platform clipboard (xclip/wl-copy/pbcopy)
-│   └── checks.ts           # User-defined pre-commit checks (cmint config files detection, glob matching, command execution)
+├── cli.ts                  # Entry point (cleye CLI parser, flags: --retry/-r, --auto/-a, --message/-m, --hint/-H, --noCheck/-n, --debug/-d)
+├── env.d.ts                # Picomatch type declaration
+├── commands/               # CLI workflow orchestrators → see src/commands/AGENTS.md
+├── services/               # External system integrations → see src/services/AGENTS.md
 ├── ui/
-│   └── menu.ts             # Recovery TUI (copy/skip/retry/edit/cancel)
+│   ├── menu.ts             # Recovery TUI (6 options) + staging menu + check failure menu (4 options)
+│   ├── menu.test.ts        # Menu UI tests
+│   ├── review-message.ts   # Message review step (use-as-is / edit / cancel)
+│   └── grouping.ts         # Grouping confirmation UI + grouped files display + progress
 └── utils/
     ├── cache.ts            # Commit message persistence at ~/.cache/commit-mint/
     ├── debug.ts            # Timestamped debug logging to stderr
@@ -38,41 +32,48 @@ src/
 | Task | Location | Notes |
 |------|----------|-------|
 | Add new CLI flag | `src/cli.ts` | Add to `flags` object, pass through to `commitCommand` |
-| Change commit flow | `src/commands/commit.ts` | Main lifecycle: retry mode + normal mode (with message review step) |
-| Change AI generation | `src/services/ai.ts` | Diff compression, prompt building, Groq API call, validation retry |
+| Change commit flow | `src/commands/commit.ts` | Main lifecycle: retry → auto-group → normal (staging → checks → generate → review → commit) |
+| Change auto-group flow | `src/commands/auto-group.ts` | Multi-commit: excluded files → checks → AI grouping → sequential per-group commits |
+| Change AI generation | `src/services/ai.ts` | 4-tier diff compression, multi-provider, validation retry |
+| Add/change provider | `src/services/provider.ts` | Add to `PROVIDER_CONFIGS` + `PROVIDER_ENV_KEYS`, update `ProviderName` |
 | Parse a new hook type | `src/services/hooks.ts` | Add parser fn, wire into `parseHookErrors` |
 | Add recovery menu option | `src/ui/menu.ts` | Add to options array + switch case |
-| Config format/defaults | `src/services/config.ts` | INI at `~/.commit-mint`, defaults at line 20 |
+| Add staging menu option | `src/ui/menu.ts` | Add to `showStagingMenu` options |
+| Change message review | `src/ui/review-message.ts` | 3-option review: use-as-is / edit / cancel |
+| Config format/defaults | `src/services/config.ts` | INI at `~/.commit-mint`, per-provider model keys |
 | Cache persistence | `src/utils/cache.ts` | SHA-256 hash of repo path as key |
 | Debug logging | `src/utils/debug.ts` | `debug(...)` prints to stderr when `--debug` flag is set |
-| Add new check command | `src/services/checks.ts` | Add to cmint config file |
-| Change check behavior | `src/services/checks.ts` | `matchFiles`, `buildCommand`, `runCommand`, `runAllChecks` |
+| Add new check command | `src/services/checks.ts` | Add to cmint config file (14 naming patterns) |
+| Change file grouping | `src/services/grouping.ts` | AI grouping, exclude filtering, lockfile companion promotion |
+| Change hook progress display | `src/services/hook-progress.ts` | [STARTED]/[COMPLETED]/[FAILED] marker parsing |
 
 ## CODE MAP
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `commitCommand` | Function | `src/commands/commit.ts:26` | Main commit lifecycle orchestrator |
-| `generateMessage` | Function | `src/commands/commit.ts:215` | Config → AI adapter (reads config, delegates to `generateCommitMessage`) |
-| `generateCommitMessage` | Function | `src/services/ai.ts:124` | Groq API call with diff compression, validation, retry |
-| `compressDiff` | Function | `src/services/ai.ts:16` | 3-tier diff compression (full → strip context → per-hunk cap → file summary) |
-| `parseHookErrors` | Function | `src/services/hooks.ts:14` | Routes stderr to 5 tool-specific parsers |
-| `showRecoveryMenu` | Function | `src/ui/menu.ts:8` | Interactive recovery TUI (recursive on re-stage fail) |
-| `attemptCommit` | Function | `src/services/git.ts:84` | `git commit -m`, returns `CommitResult` |
-| `getStagedDiff` | Function | `src/services/git.ts:23` | Diff with default excludes (lockfiles, dist, etc.) |
-| `KnownError` | Class | `src/services/git.ts:5` | Base error for git-specific failures |
-| `HookError` | Interface | `src/services/hooks.ts:4` | `{ tool, message, raw }` error shape |
-| `CachedCommit` | Interface | `src/utils/cache.ts:17` | `{ message, timestamp, repoPath }` |
-| `Config` | Interface | `src/services/config.ts:10` | Config shape (GROQ_API_KEY, model, locale, max-length, type, timeout, proxy) |
-| `copyToClipboard` | Function | `src/services/clipboard.ts:3` | Tries wl-copy → xclip → xsel → pbcopy |
-| `debug` | Function | `src/utils/debug.ts:13` | Timestamped stderr output (gated by `isDebug()`) |
-| `configCommand` | Command | `src/commands/config.ts:4` | `cmint config get/set` |
-| `detectConfig` | Function | `src/services/checks.ts:51` | Detect cmint config file (14 supported naming patterns) |
-| `loadConfig` | Function | `src/services/checks.ts:70` | Load and validate cmint config (JSON, JS/TS, CJS/MJS) |
-| `matchFiles` | Function | `src/services/checks.ts:117` | Filter files by picomatch glob |
-| `buildCommand` | Function | `src/services/checks.ts:190` | Build command string with quoted file paths |
-| `runCommand` | Function | `src/services/checks.ts:68` | Execute check command with timeout |
-| `runAllChecks` | Function | `src/services/checks.ts:138` | Orchestrate all checks (detect → load → match → run) |
+| `commitCommand` | Function | `src/commands/commit.ts:34` | Main commit lifecycle orchestrator |
+| `runAutoGroupFlow` | Function | `src/commands/auto-group.ts:47` | Auto-group multi-commit flow |
+| `handleStaging` | Function | `src/commands/staging.ts:13` | Interactive staging loop |
+| `handleRetry` | Function | `src/commands/retry.ts:9` | Load cached message, re-attempt commit |
+| `commitWithRecovery` | Function | `src/commands/commit-utils.ts` | Attempt → HEAD check → recovery menu |
+| `configCommand` | Command | `src/commands/config.ts:216` | `cmint config` interactive TUI |
+| `generateCommitMessage` | Function | `src/services/ai.ts:172` | Multi-provider AI call, diff compression, validation retry |
+| `compressDiff` | Function | `src/services/ai.ts:55` | 4-tier diff compression (full → strip context → cap hunks → file summary) |
+| `createProvider` | Function | `src/services/provider.ts:104` | Provider factory (Groq SDK or fetch client) |
+| `parseHookErrors` | Function | `src/services/hooks.ts:13` | Routes stderr to 5 tool-specific parsers |
+| `parseToolChecks` | Function | `src/services/hooks.ts:182` | Post-commit tool success/failure summary |
+| `generateGroups` | Function | `src/services/grouping.ts:154` | AI file grouping into logical commits |
+| `validateGroups` | Function | `src/services/grouping.ts:227` | Attach orphaned files, deduplicate |
+| `runAllChecks` | Function | `src/services/checks.ts:239` | Detect config → load → match → run checks |
+| `getStagedDiff` | Function | `src/services/git.ts:59` | Diff with exclude patterns, returns union type |
+| `attemptCommit` | Function | `src/services/git.ts:148` | `git commit -m` with real-time stderr collection |
+| `showRecoveryMenu` | Function | `src/ui/menu.ts:140` | 6-option recovery TUI (recursive on re-stage fail) |
+| `showStagingMenu` | Function | `src/ui/menu.ts:17` | Staging: select files / auto-group / run checks / stage all |
+| `showCheckFailureMenu` | Function | `src/ui/menu.ts:269` | Check failure: copy / view / skip / cancel |
+| `reviewCommitMessage` | Function | `src/ui/review-message.ts` | Message review: use-as-is / edit / cancel |
+| `showGroupingConfirmation` | Function | `src/ui/grouping.ts` | Grouping confirmation with file list |
+| `Config` | Interface | `src/services/config.ts:15` | Config shape with per-provider model keys |
+| `ProviderName` | Type | `src/services/provider.ts:4` | `"groq" \| "cerebras" \| "mistral"` |
 
 ## CONVENTIONS
 
@@ -93,8 +94,9 @@ src/
 - **NEVER use CommonJS syntax** — this is ESM-only (`"type": "module"`)
 - **NEVER add clipboard dependencies** — shell out to platform tools (xclip/wl-copy/pbcopy)
 - **NEVER modify hook output parsing without testing all 5 parsers** — lint-staged, biome, tsc, vitest/eslint are all interleaved in `parseHookErrors`
-- **NEVER hardcode model names** — read from config (`model` key in `~/.commit-mint`)
+- **NEVER hardcode model names** — use `getModelForProvider()` resolution chain (per-provider override → global model → provider default)
 - **NEVER add lint-staged dependency** — project uses cmint config files for pre-commit checks
+- **NEVER include `/openai/v1/` in Groq baseURL** — Groq SDK appends it internally; non-Groq providers use fetch client that appends `/chat/completions` directly
 
 ## COMMANDS
 
@@ -112,16 +114,19 @@ npm run test:watch      # vitest --watch
 
 ## NOTES
 
-- `generateMessage()` delegates to `src/services/ai.ts` — fully implemented with Groq SDK, 3-tier diff compression (full → strip context → per-hunk cap → file summary), conventional commit regex validation with retry on failure
+- Multi-provider AI: Groq SDK for groq provider, generic fetch client for cerebras/mistral. `createProvider()` in `src/services/provider.ts` routes automatically.
+- Diff compression is 4-tier (not 3): Tier 0 full (≤20K chars) → Tier 1 strip context → Tier 2 cap hunks (10 changed lines) → Tier 3 file summary
 - Commit flow includes message review step (use-as-is / edit / cancel) before attempting commit
 - `--hint/-H` flag passes user context to AI prompt alongside diff
 - `--debug/-d` flag enables timestamped stderr logging via `src/utils/debug.ts`
-- `vision.md` lists files that don't exist yet: `src/ui/display.ts`, `src/utils/platform.ts`, `src/commands/retry.ts` (retry is a flag in commit.ts, not a separate command)
+- `--noCheck/-n` flag skips pre-commit checks
 - Config file path: `~/.commit-mint` (not `~/.config/commit-mint`)
 - Cache path: `~/.cache/commit-mint/`
 - Clipboard tries commands in order: wl-copy → xclip → xsel → pbcopy
 - Recovery menu is recursive — re-stage failure re-shows the menu
 - `getStagedDiff` excludes: package-lock.json, node_modules, dist, build, .next, coverage, *.log, *.min.js, *.min.css, *.lock, .DS_Store
-- No CI/CD pipeline — published npm package with no GitHub Actions workflows
-- `getRepoRoot` is statically imported but also dynamically re-imported in `commit.ts` (lines 33, 170) — redundant
+- Auto-group commits sequentially (git locking), hook failure stops the sequence
+- Lockfile companion promotion: `package-lock.json` staged alongside `package.json` even if excluded
+- Excluded-only diff gets hardcoded commit message ("chore: update lockfile" / "chore: update generated files")
+- CI: `.github/workflows/ci.yml` (test + lint + typecheck) + `release.yml` (publish on tags)
 - Package bin output: `dist/cli.mjs` (explicit ESM extension)
