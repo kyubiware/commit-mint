@@ -71,6 +71,7 @@ vi.mock("../services/git.js", () => ({
 
 vi.mock("../services/hooks.js", () => ({
 	parseHookErrors: vi.fn(() => []),
+	parseCheckErrors: vi.fn(() => []),
 	parseToolChecks: vi.fn(() => []),
 }));
 
@@ -121,7 +122,7 @@ import {
 	stageFiles,
 } from "../services/git.js";
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js";
-import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
+import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import { showGroupingConfirmation } from "../ui/grouping.js";
 import { showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
@@ -166,6 +167,7 @@ describe("runAutoGroupFlow loop control", () => {
 		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
 		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg);
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
+		vi.mocked(parseCheckErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseToolChecks).mockReturnValue([]);
 		// Default: checks pass (no-op) so existing tests proceed to grouping
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
@@ -263,6 +265,7 @@ describe("runAutoGroupFlow check integration", () => {
 		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
 		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg);
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
+		vi.mocked(parseCheckErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseToolChecks).mockReturnValue([]);
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 	}
@@ -300,7 +303,7 @@ describe("runAutoGroupFlow check integration", () => {
 				},
 			],
 		});
-		// parseHookErrors returns concise 1-liners, NOT raw multi-line stderr
+		// parseCheckErrors returns concise 1-liners, NOT raw multi-line stderr
 		const parsedErrors = [
 			{
 				tool: "biome",
@@ -308,13 +311,13 @@ describe("runAutoGroupFlow check integration", () => {
 				raw: biomeStderr,
 			},
 		];
-		vi.mocked(parseHookErrors).mockReturnValue(parsedErrors);
+		vi.mocked(parseCheckErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("cancelled");
 
 		const result = await runAutoGroupFlow(changedFiles, flags);
 
-		// parseHookErrors was called with the combined stderr
-		expect(parseHookErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
+		// parseCheckErrors was called with the combined output
+		expect(parseCheckErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
 		// Recovery menu was shown with PARSED errors (concise 1-liners), not raw stderr
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,

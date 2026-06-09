@@ -20,7 +20,7 @@ import {
 } from "../services/git.js";
 import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js";
 import { createProgressHandler } from "../services/hook-progress.js";
-import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
+import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js";
 import {
 	formatProviderName,
 	isValidProvider,
@@ -99,9 +99,11 @@ export async function runAutoGroupFlow(
 		if (!checkResults.ok) {
 			ck.stop(`${checkResults.results.filter((r) => !r.ok).length} check(s) failed`);
 			const failed = checkResults.results.filter((r) => !r.ok);
-			const rawStderr = failed.map((r) => `[${r.tool}] ${r.stderr}`).join("\n");
-			const checkErrors = parseHookErrors(rawStderr);
-			const menuResult = await showCheckFailureMenu(checkErrors, rawStderr);
+			const rawOutput = failed
+				.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
+				.join("\n\n");
+			const checkErrors = parseCheckErrors(rawOutput);
+			const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
 			if (menuResult === "cancelled") {
 				return "cancelled";
 			}
