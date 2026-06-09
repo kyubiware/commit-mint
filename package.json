@@ -1,7 +1,7 @@
 {
 	"name": "@kyubiware/commit-mint",
 	"version": "0.4.2",
-	"description": "A commit tool that actually handles hook failures",
+	"description": "🌿 A commit tool that actually handles hook failures",
 	"type": "module",
 	"bin": {
 		"cmint": "./dist/cli.mjs"

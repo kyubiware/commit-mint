@@ -14,7 +14,7 @@ export async function handleRetry(): Promise<void> {
 		outro(red("No cached commit message found. Run cmint without --retry first."));
 		process.exit(1);
 	}
-	intro("commit-mint — retry");
+	intro("🌿 commit-mint — retry");
 	const s = spinner();
 	const headBefore = await getHead();
 	s.start("Running pre-commit hooks...");

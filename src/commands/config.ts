@@ -188,7 +188,7 @@ async function editSettingsLoop(initialConfig: Record<string, string | undefined
 
 export async function configCommand(): Promise<void> {
 	debug("configCommand: starting");
-	p.intro(bold("commit-mint config"));
+	p.intro(bold("🌿 commit-mint config"));
 
 	while (true) {
 		const config = (await readConfig()) as Record<string, string | undefined>;

@@ -32,7 +32,7 @@ export async function reviewCommand(): Promise<void> {
 		return;
 	}
 
-	intro("commit-mint — code review");
+	intro("🌿 commit-mint — code review");
 	log.info(diffResult.files.map((f) => `     ${f}`).join("\n"));
 
 	const opencodeAvailable = await isOpenCodeAvailable();

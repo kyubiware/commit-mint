@@ -41,7 +41,7 @@ export async function commitCommand(flags: CommitFlags) {
 	}
 
 	// ── Normal mode ─────────────────────────────────────────────────
-	intro("commit-mint");
+	intro("🌿 commit-mint");
 
 	const status = await getStatusShort();
 	debug("Git status:", status || "(empty)");
