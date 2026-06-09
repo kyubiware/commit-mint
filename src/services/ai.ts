@@ -20,6 +20,10 @@ export function mapGroqError(error: unknown, providerLabel?: string): Error {
 	if (error instanceof Groq.APIError) {
 		return new Error(`${label} API error: ${error.message}`);
 	}
+	// Handle errors from the generic fetch client (non-Groq providers)
+	if (error instanceof Error && /^4\d{2}\s/.test(error.message)) {
+		return new Error(`${label} API error: ${error.message}`);
+	}
 	return new Error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
 }
 
@@ -218,6 +222,7 @@ export async function generateCommitMessage(
 		);
 		try {
 			const isReasoningModel = /^(o[1-9]|.*gpt-oss.*|.*gpt-5.*)/i.test(model);
+			const isGroq = (options.provider ?? "groq") === "groq";
 			const completion = await client.chat.completions.create({
 				messages: [
 					{ role: "system", content: strictSystemPrompt ?? systemPrompt },
@@ -226,7 +231,7 @@ export async function generateCommitMessage(
 				model,
 				temperature: 0.3,
 				...(isReasoningModel ? { max_completion_tokens: 1024 } : { max_tokens: 1024 }),
-				reasoning_format: "parsed",
+				...(isGroq && isReasoningModel ? { reasoning_format: "parsed" } : {}),
 			});
 
 			const elapsed = Date.now() - callStart;
