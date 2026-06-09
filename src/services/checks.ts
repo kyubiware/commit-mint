@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import { execa } from "execa";
 import picomatch from "picomatch";
 import { debug } from "../utils/debug.js";
+import { extractToolName } from "./hooks.js";
 
 /** Config file names, checked in priority order (matches lint-staged naming conventions) */
 const CONFIG_FILES = [
@@ -115,7 +116,7 @@ export async function runCommand(
 	repoRoot?: string,
 ): Promise<CheckResult> {
 	debug("runCommand: %s (timeout: %dms)", command, timeout);
-	const bin = command.split(" ")[0];
+	const tool = extractToolName(command) ?? command.split(" ")[0];
 
 	try {
 		const result = await execa(command, {
@@ -127,10 +128,10 @@ export async function runCommand(
 			...(repoRoot ? { localDir: repoRoot } : {}),
 		});
 		const ok = !result.failed;
-		debug("runCommand: %s \u2014 ok=%s", bin, ok);
+		debug("runCommand: %s \u2014 ok=%s", tool, ok);
 		return {
 			ok,
-			tool: bin,
+			tool: tool,
 			command,
 			stdout: result.stdout ?? "",
 			stderr: result.stderr ?? "",
@@ -142,16 +143,16 @@ export async function runCommand(
 		const isNotFound =
 			msg.toLowerCase().includes("enoent") || msg.toLowerCase().includes("not found");
 
-		debug("runCommand: %s \u2014 error: %s", bin, msg);
+		debug("runCommand: %s \u2014 error: %s", tool, msg);
 		return {
 			ok: false,
-			tool: bin,
+			tool: tool,
 			command,
 			stdout: "",
 			stderr: isTimedOut
 				? `Check timed out after ${timeout}ms`
 				: isNotFound
-					? `Command not found: ${bin}`
+					? `Command not found: ${tool}`
 					: msg,
 			files: [],
 		};

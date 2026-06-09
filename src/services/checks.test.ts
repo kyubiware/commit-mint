@@ -441,6 +441,16 @@ describe("runCommand", () => {
 		expect(result.stderr).toBe("error output");
 	});
 
+	it("extracts tool name from npm run commands", async () => {
+		mockExeca.mockResolvedValue({
+			failed: false,
+			stdout: "",
+			stderr: "",
+			all: "",
+		});
+		const result = await runCommand("npm run build", 5000, "/repo");
+		expect(result.tool).toBe("build");
+	});
 	it("command not found returns ok: false with not found message", async () => {
 		const err = new Error("spawn nonexistent ENOENT");
 		mockExeca.mockRejectedValue(err);
