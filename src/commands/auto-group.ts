@@ -55,6 +55,9 @@ export async function runAutoGroupFlow(
 	if (excluded.length > 0) {
 		debug("Committing %d excluded files upfront:", excluded.length, excluded);
 		const message = buildExcludedFilesMessage(excluded);
+
+		log.info(excluded.map((f) => `     ${f}`).join("\n"));
+
 		await resetStaging();
 		await stageFiles(excluded);
 
@@ -64,15 +67,21 @@ export async function runAutoGroupFlow(
 
 		if (commitResult.ok || headBefore !== headAfter) {
 			debug("Excluded files committed:", message);
+			log.success(dim(message));
 		} else {
 			debug("Excluded files commit failed, continuing without them");
+			log.warn(red("Failed to commit excluded files."));
 		}
 	}
 
 	// If only excluded files existed, we're done
 	if (included.length === 0) {
 		debug("No included files to group, done");
-		outro(green("Done."));
+		if (excluded.length > 0) {
+			outro(green("Committed excluded files. No other changes to group."));
+		} else {
+			outro(dim("Nothing to commit."));
+		}
 		return "committed";
 	}
 

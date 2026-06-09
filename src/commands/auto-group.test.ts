@@ -5,7 +5,7 @@ import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js";
 vi.mock("@clack/prompts", () => ({
 	intro: vi.fn(),
 	outro: vi.fn(),
-	log: { info: vi.fn(), warn: vi.fn() },
+	log: { info: vi.fn(), warn: vi.fn(), success: vi.fn() },
 	spinner: vi.fn(() => ({
 		start: vi.fn(),
 		stop: vi.fn(),
