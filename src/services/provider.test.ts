@@ -1,3 +1,4 @@
+import type Groq from "groq-sdk";
 import { describe, expect, it } from "vitest";
 import {
 	ALLOWED_PROVIDERS,
@@ -106,10 +107,10 @@ describe("createProvider with proxy override", () => {
 		});
 		expect(result.client).toBeDefined();
 		// Verify the client was constructed with the override, not the default
-		expect(result.client.baseURL).toBe("https://custom-proxy.example.com");
+		expect((result.client as Groq).baseURL).toBe("https://custom-proxy.example.com");
 	});
 	it("uses provider default baseURL when no override given", () => {
 		const result = createProvider({ provider: "groq", apiKey: "test" });
-		expect(result.client.baseURL).toBe(PROVIDER_CONFIGS.groq.baseURL);
+		expect((result.client as Groq).baseURL).toBe(PROVIDER_CONFIGS.groq.baseURL);
 	});
 });
