@@ -96,22 +96,39 @@ export async function runAutoGroupFlow(
 			debug("Running user checks on %d files...", allFiles.length);
 			const ck = spinner();
 			ck.start("Running checks...");
-			const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
+			let checkResults = await runAllChecks(repoRoot, allFiles, 60000);
 			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
-			if (!checkResults.ok) {
-				ck.stop(`${checkResults.results.filter((r) => !r.ok).length} check(s) failed`);
+			while (!checkResults.ok) {
 				const failed = checkResults.results.filter((r) => !r.ok);
+				ck.stop(`${failed.length} check(s) failed`);
 				const rawOutput = failed
 					.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
 					.join("\n\n");
 				const checkErrors = parseCheckErrors(rawOutput);
-				const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
+				const menuResult = await showCheckFailureMenu(checkErrors, rawOutput, async () => {
+					const retryResult = await runAllChecks(repoRoot, allFiles, 60000);
+					return retryResult.ok;
+				});
 				if (menuResult === "cancelled") {
 					return "cancelled";
 				}
+				if (menuResult === "retried") {
+					debug("Re-running checks after retry...");
+					ck.start("Running checks...");
+					checkResults = await runAllChecks(repoRoot, allFiles, 60000);
+					debug(
+						"Retry check results: ok=%s, count=%d",
+						checkResults.ok,
+						checkResults.results.length,
+					);
+					continue;
+				}
 				// "skipped" → continue to grouping and commits
-			} else {
+				break;
+			}
+
+			if (checkResults.ok) {
 				ck.stop("All checks passed");
 				if (checkResults.results.length > 0) {
 					log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));

@@ -344,6 +344,7 @@ describe("runAutoGroupFlow check integration", () => {
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,
 			expect.stringContaining("[biome]"),
+			expect.any(Function),
 		);
 		// Flow stopped before any commit
 		expect(result).toBe("cancelled");
