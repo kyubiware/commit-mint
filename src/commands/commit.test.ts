@@ -419,6 +419,7 @@ describe("commitCommand check integration", () => {
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,
 			expect.stringContaining("[biome]"),
+			expect.any(Function),
 		);
 		// User skipped → flow continued to message generation
 		expect(generateCommitMessage).toHaveBeenCalled();
@@ -466,6 +467,7 @@ describe("commitCommand check integration", () => {
 		expect(showCheckFailureMenu).toHaveBeenCalledWith(
 			parsedErrors,
 			expect.stringContaining("[biome]"),
+			expect.any(Function),
 		);
 		// Flow stopped — no message generation, no commit
 		expect(generateCommitMessage).not.toHaveBeenCalled();
