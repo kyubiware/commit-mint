@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { showRecoveryMenu } from "./menu.js";
+import { showCheckFailureMenu, showRecoveryMenu } from "./menu.js";
 
 // Mock all external dependencies
 vi.mock("@clack/prompts", () => ({
@@ -335,5 +335,73 @@ describe("showRecoveryMenu", () => {
 		expect(result).toBe("cancelled");
 
 		exitSpy.mockRestore();
+	});
+});
+
+describe("showCheckFailureMenu", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(isCancel).mockReturnValue(false);
+	});
+
+	it("should return 'retried' when retry is selected", async () => {
+		vi.mocked(select).mockResolvedValueOnce("retry");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr, async () => true);
+
+		expect(result).toBe("retried");
+	});
+
+	it("should return 'retried' even without onRetry callback", async () => {
+		vi.mocked(select).mockResolvedValueOnce("retry");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr);
+
+		expect(result).toBe("retried");
+	});
+
+	it("should loop back to menu after copy then retry", async () => {
+		vi.mocked(copyToClipboard).mockResolvedValue(true);
+		vi.mocked(select).mockResolvedValueOnce("copy").mockResolvedValueOnce("retry");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr, async () => true);
+
+		expect(copyToClipboard).toHaveBeenCalledWith(mockRawStderr);
+		expect(select).toHaveBeenCalledTimes(2);
+		expect(result).toBe("retried");
+	});
+
+	it("should loop back to menu after view then retry", async () => {
+		vi.mocked(select).mockResolvedValueOnce("view").mockResolvedValueOnce("retry");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr, async () => true);
+
+		expect(select).toHaveBeenCalledTimes(2);
+		expect(result).toBe("retried");
+	});
+
+	it("should return 'skipped' when skip is selected", async () => {
+		vi.mocked(select).mockResolvedValueOnce("skip");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr);
+
+		expect(result).toBe("skipped");
+	});
+
+	it("should return 'cancelled' when cancel is selected", async () => {
+		vi.mocked(select).mockResolvedValueOnce("cancel");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr);
+
+		expect(result).toBe("cancelled");
+	});
+
+	it("should return 'cancelled' on isCancel", async () => {
+		vi.mocked(isCancel).mockReturnValue(true);
+		vi.mocked(select).mockResolvedValue("cancel");
+
+		const result = await showCheckFailureMenu(mockErrors, mockRawStderr);
+
+		expect(result).toBe("cancelled");
 	});
 });

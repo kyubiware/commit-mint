@@ -266,10 +266,12 @@ export async function showRecoveryMenu(
 	}
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Check failure menu with retry option
 export async function showCheckFailureMenu(
 	errors: HookError[],
 	rawStderr: string,
-): Promise<"skipped" | "cancelled"> {
+	onRetry?: () => Promise<boolean>,
+): Promise<"skipped" | "cancelled" | "retried"> {
 	debug("showCheckFailureMenu: %d errors", errors.length);
 
 	let clipboardCopied = false;
@@ -293,6 +295,11 @@ export async function showCheckFailureMenu(
 					label: "View full error output",
 					value: "view",
 					hint: "Show the raw stderr from checks",
+				},
+				{
+					label: "Retry checks",
+					value: "retry",
+					hint: "Re-run checks after fixing errors",
 				},
 				{
 					label: "Skip checks and commit",
@@ -326,6 +333,13 @@ export async function showCheckFailureMenu(
 			case "view": {
 				p.note(rawStderr.trim() || "(no raw output)", "Full error output");
 				continue;
+			}
+			case "retry": {
+				if (onRetry) {
+					return "retried";
+				}
+				// No retry callback — return retried so caller can handle the loop
+				return "retried";
 			}
 			case "skip": {
 				p.log.info("Skipping checks and proceeding with commit...");

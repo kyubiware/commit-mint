@@ -94,6 +94,7 @@ export async function handleStaging(
 }
 
 /** Run user-defined pre-commit checks from cmint config */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Check failure loop with retry support
 export async function runPreCommitChecks(
 	changedFiles: Awaited<ReturnType<typeof getChangedFiles>>,
 	noCheck?: boolean,
@@ -106,18 +107,38 @@ export async function runPreCommitChecks(
 	if (stagedFileList.length === 0) return;
 
 	debug("Running user checks on %d staged files...", stagedFileList.length);
-	const checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
+	let checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
-	if (!checkResults.ok) {
+	while (!checkResults.ok) {
 		const failed = checkResults.results.filter((r) => !r.ok);
 		const rawOutput = failed
 			.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
 			.join("\n\n");
 		const checkErrors = parseCheckErrors(rawOutput);
-		const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
+		const menuResult = await showCheckFailureMenu(checkErrors, rawOutput, async () => {
+			const retryResult = await runAllChecks(checkRoot, stagedFileList, 60000);
+			return retryResult.ok;
+		});
 		if (menuResult === "cancelled") {
 			process.exit(1);
 		}
+		if (menuResult === "retried") {
+			debug("Re-running checks after retry...");
+			const ckSpinner = spinner();
+			ckSpinner.start("Running checks...");
+			checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
+			debug("Retry check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
+			if (checkResults.ok) {
+				ckSpinner.stop("All checks passed");
+				for (const r of checkResults.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
+			} else {
+				const retryFailed = checkResults.results.filter((r) => !r.ok);
+				ckSpinner.stop(`${retryFailed.length} check${retryFailed.length !== 1 ? "s" : ""} failed`);
+			}
+			continue;
+		}
+		// "skipped" — break out of loop
+		break;
 	}
 }
