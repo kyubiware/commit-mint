@@ -1,7 +1,7 @@
 import { isCancel, log, outro, spinner } from "@clack/prompts";
 import { dim, green, red } from "kolorist";
 import { generateCommitMessage } from "../services/ai.js";
-import { runAllChecks } from "../services/checks.js";
+import { detectConfig, runAllChecks } from "../services/checks.js";
 import {
 	getModelForProvider,
 	getProviderApiKey,
@@ -90,29 +90,33 @@ export async function runAutoGroupFlow(
 		const { getRepoRoot } = await import("../services/git.js");
 		const repoRoot = await getRepoRoot();
 		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path);
-		debug("Running user checks on %d files...", allFiles.length);
-		const ck = spinner();
-		ck.start("Running checks...");
-		const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
-		debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
+		// Only show check UI when a cmintrc config actually exists
+		const configPath = await detectConfig(repoRoot);
+		if (configPath) {
+			debug("Running user checks on %d files...", allFiles.length);
+			const ck = spinner();
+			ck.start("Running checks...");
+			const checkResults = await runAllChecks(repoRoot, allFiles, 60000);
+			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
-		if (!checkResults.ok) {
-			ck.stop(`${checkResults.results.filter((r) => !r.ok).length} check(s) failed`);
-			const failed = checkResults.results.filter((r) => !r.ok);
-			const rawOutput = failed
-				.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
-				.join("\n\n");
-			const checkErrors = parseCheckErrors(rawOutput);
-			const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
-			if (menuResult === "cancelled") {
-				return "cancelled";
+			if (!checkResults.ok) {
+				ck.stop(`${checkResults.results.filter((r) => !r.ok).length} check(s) failed`);
+				const failed = checkResults.results.filter((r) => !r.ok);
+				const rawOutput = failed
+					.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
+					.join("\n\n");
+				const checkErrors = parseCheckErrors(rawOutput);
+				const menuResult = await showCheckFailureMenu(checkErrors, rawOutput);
+				if (menuResult === "cancelled") {
+					return "cancelled";
+				}
+				// "skipped" → continue to grouping and commits
+			} else {
+				ck.stop("All checks passed");
+				if (checkResults.results.length > 0) {
+					log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
+				}
 			}
-			// "skipped" → continue to grouping and commits
-		} else if (checkResults.results.length > 0) {
-			ck.stop("All checks passed");
-			log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
-		} else {
-			ck.stop();
 		}
 	}
 

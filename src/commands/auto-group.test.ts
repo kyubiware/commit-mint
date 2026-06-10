@@ -93,6 +93,7 @@ vi.mock("../ui/menu.js", () => ({
 }));
 
 vi.mock("../services/checks.js", () => ({
+	detectConfig: vi.fn(),
 	runAllChecks: vi.fn(),
 }));
 
@@ -110,7 +111,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { outro, spinner } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
-import { runAllChecks } from "../services/checks.js";
+import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig } from "../services/config.js";
 import type { ChangedFile } from "../services/git.js";
 import {
@@ -169,7 +170,8 @@ describe("runAutoGroupFlow loop control", () => {
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseCheckErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseToolChecks).mockReturnValue([]);
-		// Default: checks pass (no-op) so existing tests proceed to grouping
+		// Default: cmintrc config exists, checks pass (no-op) so existing tests proceed to grouping
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc");
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 	}
 
@@ -267,6 +269,7 @@ describe("runAutoGroupFlow check integration", () => {
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseCheckErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }]);
 		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc");
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 	}
 
@@ -286,20 +289,21 @@ describe("runAutoGroupFlow check integration", () => {
 		expect(result).toBe("committed");
 	});
 
-	it("does NOT print 'All checks passed' when check results are empty (no cmintrc config)", async () => {
+	it("skips the check spinner entirely when no cmintrc config exists (no empty list item)", async () => {
 		setupCheckMocks();
-		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+		// No cmintrc config file
+		vi.mocked(detectConfig).mockResolvedValue(null);
 
 		const result = await runAutoGroupFlow(changedFiles, flags);
 
-		// The check spinner (first spinner() call in the flow) should NOT have been
-		// stopped with "All checks passed" — that message only applies when actual
-		// checks were configured and ran.
+		// The checks block was skipped entirely — no "Running checks..." spinner was created
+		expect(runAllChecks).not.toHaveBeenCalled();
+		// The first spinner in the flow should be "Analyzing files...", not "Running checks..."
 		const spinnerCalls = vi.mocked(spinner).mock.results;
-		expect(spinnerCalls.length).toBeGreaterThan(0);
-		const checkSpinnerStop = spinnerCalls[0]?.value?.stop;
-		expect(checkSpinnerStop).not.toHaveBeenCalledWith("All checks passed");
-		// Flow should still complete normally
+		if (spinnerCalls.length > 0) {
+			expect(spinnerCalls[0]?.value?.start).not.toHaveBeenCalledWith("Running checks...");
+		}
+		// Flow still completes normally
 		expect(attemptCommit).toHaveBeenCalledTimes(2);
 		expect(result).toBe("committed");
 	});
@@ -370,6 +374,7 @@ describe("runAutoGroupFlow excluded files handling", () => {
 		vi.mocked(getHead).mockResolvedValue("abc123");
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 		vi.mocked(parseToolChecks).mockReturnValue([]);
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc");
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 	}
 
