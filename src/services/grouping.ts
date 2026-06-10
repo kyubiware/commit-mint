@@ -225,12 +225,14 @@ export async function generateGroups(
 }
 
 export function validateGroups(groups: CommitGroup[], allFiles: ChangedFile[]): CommitGroup[] {
+	const validPaths = new Set(allFiles.map((f) => f.path));
 	const seen = new Set<string>();
 	const validated: CommitGroup[] = [];
 
 	for (const group of groups) {
 		const uniqueFiles = group.files.filter((f) => {
-			if (seen.has(f)) return false;
+			if (!validPaths.has(f)) return false; // AI-hallucinated path
+			if (seen.has(f)) return false; // duplicate across groups
 			seen.add(f);
 			return true;
 		});

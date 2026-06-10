@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangedFile } from "./git.js";
-import { buildGroupingSystemPrompt, filterExcludedFiles } from "./grouping.js";
+import { buildGroupingSystemPrompt, filterExcludedFiles, validateGroups } from "./grouping.js";
 
 const mockCreateProvider = vi.hoisted(() => vi.fn());
 
@@ -133,6 +133,86 @@ describe("filterExcludedFiles", () => {
 		expect(included).toHaveLength(1);
 		expect(excluded).toContain("vendor.min.js");
 		expect(excluded).toContain("debug.log");
+	});
+});
+
+describe("validateGroups", () => {
+	it("filters out AI-hallucinated file paths that do not exist in changed files", () => {
+		const allFiles: ChangedFile[] = [
+			{ status: "M", path: "packages/youtube-helper/api/routes/flashcards.py", staged: true },
+			{ status: "M", path: "packages/youtube-helper/models/review_hub.py", staged: true },
+			{ status: "M", path: "src/a.ts", staged: true },
+		];
+
+		const groups = [
+			{
+				name: "Backend changes",
+				description: "desc",
+				files: [
+					"packages/youtube-helper/api/routes/flashcards.py",
+					"packages/youtube-hook/api/routes/flashcards_stats.py", // hallucinated typo
+					"packages/youtube-helper/models/review_hub.py",
+				],
+			},
+			{
+				name: "Frontend",
+				description: "desc",
+				files: ["src/a.ts", "src/nonexistent.ts"], // one real, one hallucinated
+			},
+		];
+
+		const result = validateGroups(groups, allFiles);
+
+		// Hallucinated paths should be removed
+		expect(result[0].files).toEqual([
+			"packages/youtube-helper/api/routes/flashcards.py",
+			"packages/youtube-helper/models/review_hub.py",
+		]);
+		expect(result[1].files).toEqual(["src/a.ts"]);
+
+		// No "Other changes" group — all real files are accounted for
+		expect(result).toHaveLength(2);
+	});
+
+	it("adds hallucinated files' real counterparts to 'Other changes' if not covered by any group", () => {
+		const allFiles: ChangedFile[] = [
+			{ status: "M", path: "src/real.ts", staged: true },
+			{ status: "M", path: "src/also-real.ts", staged: true },
+		];
+
+		const groups = [
+			{
+				name: "Group 1",
+				description: "desc",
+				files: ["src/real.ts", "src/fake.ts"], // real + hallucinated
+			},
+		];
+
+		const result = validateGroups(groups, allFiles);
+
+		expect(result[0].files).toEqual(["src/real.ts"]);
+		// also-real.ts not in any group → "Other changes"
+		expect(result[1].name).toBe("Other changes");
+		expect(result[1].files).toEqual(["src/also-real.ts"]);
+	});
+
+	it("removes entire group if all its files are hallucinated", () => {
+		const allFiles: ChangedFile[] = [{ status: "M", path: "src/real.ts", staged: true }];
+
+		const groups = [
+			{
+				name: "Phantom group",
+				description: "all hallucinated",
+				files: ["src/fake1.ts", "src/fake2.ts"],
+			},
+		];
+
+		const result = validateGroups(groups, allFiles);
+
+		// Only "Other changes" with the real file
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Other changes");
+		expect(result[0].files).toEqual(["src/real.ts"]);
 	});
 });
 
