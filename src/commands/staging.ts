@@ -44,20 +44,21 @@ export async function handleStaging(
 
 		if (stagingResult === "checks") {
 			await stageAll();
-			const ckSpinner = spinner();
-			ckSpinner.start("Running checks...");
 			const allFiles = currentFiles.filter((f) => f.status !== "D").map((f) => f.path);
-			const ckResult = await runAllChecks(repoRoot, allFiles, 60000);
-			if (ckResult.ok && ckResult.results.length > 0) {
-				ckSpinner.stop("All checks passed");
-				for (const r of ckResult.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
-			} else if (ckResult.ok) {
-				ckSpinner.stop();
-			} else {
-				const failed = ckResult.results.filter((r) => !r.ok);
-				ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
-				for (const r of failed)
-					log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`);
+			const configPath = await detectConfig(repoRoot);
+			if (configPath) {
+				const ckSpinner = spinner();
+				ckSpinner.start("Running checks...");
+				const ckResult = await runAllChecks(repoRoot, allFiles, 60000);
+				if (ckResult.ok) {
+					ckSpinner.stop("All checks passed");
+					for (const r of ckResult.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
+				} else {
+					const failed = ckResult.results.filter((r) => !r.ok);
+					ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
+					for (const r of failed)
+						log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`);
+				}
 			}
 			currentFiles = await getChangedFiles();
 			continue;
