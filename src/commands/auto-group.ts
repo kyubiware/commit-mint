@@ -108,11 +108,11 @@ export async function runAutoGroupFlow(
 				return "cancelled";
 			}
 			// "skipped" → continue to grouping and commits
-		} else {
+		} else if (checkResults.results.length > 0) {
 			ck.stop("All checks passed");
-			if (checkResults.results.length > 0) {
-				log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
-			}
+			log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
+		} else {
+			ck.stop();
 		}
 	}
 

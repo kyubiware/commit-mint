@@ -108,7 +108,7 @@ vi.mock("../utils/debug.js", () => ({
 	debug: vi.fn(),
 }));
 
-import { outro } from "@clack/prompts";
+import { outro, spinner } from "@clack/prompts";
 import { generateCommitMessage } from "../services/ai.js";
 import { runAllChecks } from "../services/checks.js";
 import { getProviderApiKey, readConfig } from "../services/config.js";
@@ -282,6 +282,24 @@ describe("runAutoGroupFlow check integration", () => {
 		// Recovery menu for checks was NOT shown (checks passed)
 		expect(showCheckFailureMenu).not.toHaveBeenCalled();
 		// Both groups committed normally
+		expect(attemptCommit).toHaveBeenCalledTimes(2);
+		expect(result).toBe("committed");
+	});
+
+	it("does NOT print 'All checks passed' when check results are empty (no cmintrc config)", async () => {
+		setupCheckMocks();
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
+
+		const result = await runAutoGroupFlow(changedFiles, flags);
+
+		// The check spinner (first spinner() call in the flow) should NOT have been
+		// stopped with "All checks passed" — that message only applies when actual
+		// checks were configured and ran.
+		const spinnerCalls = vi.mocked(spinner).mock.results;
+		expect(spinnerCalls.length).toBeGreaterThan(0);
+		const checkSpinnerStop = spinnerCalls[0]?.value?.stop;
+		expect(checkSpinnerStop).not.toHaveBeenCalledWith("All checks passed");
+		// Flow should still complete normally
 		expect(attemptCommit).toHaveBeenCalledTimes(2);
 		expect(result).toBe("committed");
 	});
