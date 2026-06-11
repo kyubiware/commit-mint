@@ -3,7 +3,8 @@ import { dim, red } from "kolorist";
 import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getChangedFiles, getRepoRoot, stageAll, stageFiles } from "../services/git.js";
 import { parseCheckErrors } from "../services/hooks.js";
-import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
+import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
+import { showStagingMenu } from "../ui/staging-menu.js";
 import { debug } from "../utils/debug.js";
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js";
 

@@ -54,10 +54,12 @@ vi.mock("../services/checks.js", () => ({
 	detectConfig: vi.fn(() => Promise.resolve(null)),
 }));
 
-vi.mock("../ui/menu.js", () => ({
-	showRecoveryMenu: vi.fn(),
-	showStagingMenu: vi.fn(),
+vi.mock("../ui/check-failure-menu.js", () => ({
 	showCheckFailureMenu: vi.fn(),
+}));
+
+vi.mock("../ui/staging-menu.js", () => ({
+	showStagingMenu: vi.fn(),
 }));
 
 vi.mock("../services/checks.js", () => ({
@@ -128,7 +130,8 @@ import {
 	stageFiles,
 } from "../services/git.js";
 import { parseCheckErrors } from "../services/hooks.js";
-import { showCheckFailureMenu, showStagingMenu } from "../ui/menu.js";
+import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
+import { showStagingMenu } from "../ui/staging-menu.js";
 import { saveCachedCommit } from "../utils/cache.js";
 
 describe("commitCommand", () => {
