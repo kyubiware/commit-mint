@@ -87,9 +87,12 @@ vi.mock("../ui/grouping.js", () => ({
 	showGroupProgress: vi.fn(),
 }));
 
-vi.mock("../ui/menu.js", () => ({
-	showRecoveryMenu: vi.fn(),
+vi.mock("../ui/check-failure-menu.js", () => ({
 	showCheckFailureMenu: vi.fn(),
+}));
+
+vi.mock("../ui/recovery-menu.js", () => ({
+	showRecoveryMenu: vi.fn(),
 }));
 
 vi.mock("../services/checks.js", () => ({
@@ -124,8 +127,9 @@ import {
 } from "../services/git.js";
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js";
 import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js";
+import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
 import { showGroupingConfirmation } from "../ui/grouping.js";
-import { showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
+import { showRecoveryMenu } from "../ui/recovery-menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 
 describe("runAutoGroupFlow loop control", () => {

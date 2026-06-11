@@ -28,8 +28,9 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js";
+import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
 import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
-import { type RecoveryResult, showCheckFailureMenu, showRecoveryMenu } from "../ui/menu.js";
+import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
 import { saveCachedCommit } from "../utils/cache.js";
 import { debug } from "../utils/debug.js";

@@ -3,7 +3,7 @@ import { green, red } from "kolorist";
 import { attemptCommit, attemptCommitNoVerify, getHead, stageAll } from "../services/git.js";
 import { createProgressHandler } from "../services/hook-progress.js";
 import { parseHookErrors, parseToolChecks } from "../services/hooks.js";
-import { showRecoveryMenu } from "../ui/menu.js";
+import { showRecoveryMenu } from "../ui/recovery-menu.js";
 
 /** Shared recovery menu factory — avoids repeating the same callback set */
 export function makeRecoveryCallbacks(message: string) {
