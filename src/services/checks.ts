@@ -191,35 +191,66 @@ export function buildCommand(command: string, files: string[]): string {
 }
 
 /**
- * Resolve config commands for a glob entry into an array of command strings.
- * Function commands receive matched filenames; string commands are used as-is.
+ * A resolved command string paired with whether it originated from a function.
+ * Function-originated commands are run as-is; string commands get matched files appended.
+ */
+interface ResolvedCommand {
+	command: string;
+	fromFunction: boolean;
+}
+
+/**
+ * Call a function command with matched files and normalize the result to ResolvedCommand[].
+ */
+function resolveFunction(
+	fn: (files: string[]) => string | string[],
+	matchedFiles: string[],
+): ResolvedCommand[] {
+	const resolved = fn(matchedFiles);
+	const items = Array.isArray(resolved) ? resolved : [resolved];
+	return items.map((command) => ({ command, fromFunction: true }));
+}
+
+/**
+ * Resolve config commands for a glob entry into an array of resolved commands.
+ * Function commands are called with matched filenames; string commands are kept as-is.
+ * Each resolved entry tracks whether it came from a function (for file-append behavior).
  */
 function resolveCommands(
 	commands: string | string[] | ((filenames: string[]) => string | string[]),
 	matchedFiles: string[],
-): string[] {
-	const isFunction = typeof commands === "function";
-	if (isFunction) {
-		const resolved = (commands as (files: string[]) => string | string[])(matchedFiles);
-		return Array.isArray(resolved) ? resolved : [resolved];
+): ResolvedCommand[] {
+	if (typeof commands === "function") {
+		return resolveFunction(commands as (files: string[]) => string | string[], matchedFiles);
 	}
-	return Array.isArray(commands) ? commands : [commands as string];
+	if (Array.isArray(commands)) {
+		const result: ResolvedCommand[] = [];
+		for (const cmd of commands) {
+			if (typeof cmd === "function") {
+				result.push(...resolveFunction(cmd, matchedFiles));
+			} else {
+				result.push({ command: cmd, fromFunction: false });
+			}
+		}
+		return result;
+	}
+	return [{ command: commands as string, fromFunction: false }];
 }
 
 /**
  * Run resolved commands for a single glob entry, appending results.
+ * Function-originated commands run as-is; string commands get matched files appended.
  * Returns false if any command fails (for fail-fast signaling).
  */
 async function runCommandsForGlob(
-	cmds: string[],
-	isFunction: boolean,
+	cmds: ResolvedCommand[],
 	matchedFiles: string[],
 	timeout: number,
 	results: CheckResult[],
 	repoRoot: string,
 ): Promise<boolean> {
-	for (const cmd of cmds) {
-		const fullCommand = isFunction ? cmd : buildCommand(cmd, matchedFiles);
+	for (const { command, fromFunction } of cmds) {
+		const fullCommand = fromFunction ? command : buildCommand(command, matchedFiles);
 		debug("runCommandsForGlob: running '%s'", fullCommand);
 		const result = await runCommand(fullCommand, timeout, repoRoot);
 		results.push({ ...result, files: matchedFiles });
@@ -256,7 +287,6 @@ export async function runAllChecks(
 
 	for (const [glob, commands] of Object.entries(config)) {
 		const matchedFiles = matchFiles(glob, stagedFiles);
-		const isFunction = typeof commands === "function";
 
 		if (matchedFiles.length === 0) {
 			debug("runAllChecks: no files matched pattern '%s'", glob);
@@ -265,7 +295,7 @@ export async function runAllChecks(
 		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length);
 
 		const cmds = resolveCommands(commands, matchedFiles);
-		const ok = await runCommandsForGlob(cmds, isFunction, matchedFiles, timeout, results, repoRoot);
+		const ok = await runCommandsForGlob(cmds, matchedFiles, timeout, results, repoRoot);
 		if (!ok) return { ok: false, results };
 	}
 

@@ -656,6 +656,67 @@ describe("runAllChecks", () => {
 		expect(mockExeca).toHaveBeenCalledTimes(2);
 	});
 
+	it("resolves function elements inside an array (mixed string + function entries)", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
+		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+		await writeFile(
+			join(tmpDir, ".cmintrc.ts"),
+			`export default {
+  "*.ts": [
+    "biome check --fix",
+    () => "tsc --noEmit",
+    () => "vitest run",
+  ],
+};`,
+		);
+		mockAccess
+			.mockRejectedValueOnce(new Error("ENOENT"))
+			.mockRejectedValueOnce(new Error("ENOENT"))
+			.mockRejectedValueOnce(new Error("ENOENT"))
+			.mockRejectedValueOnce(new Error("ENOENT"))
+			.mockRejectedValueOnce(new Error("ENOENT"))
+			.mockResolvedValueOnce(undefined);
+		mockExeca
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			})
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			})
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			});
+
+		const result = await runAllChecks(tmpDir, ["src/foo.ts"], 5000);
+		expect(result.ok).toBe(true);
+		expect(result.results).toHaveLength(3);
+		// String command gets files appended; function commands don't
+		expect(mockExeca).toHaveBeenNthCalledWith(
+			1,
+			"biome check --fix src/foo.ts",
+			expect.objectContaining({ shell: true }),
+		);
+		expect(mockExeca).toHaveBeenNthCalledWith(
+			2,
+			"tsc --noEmit",
+			expect.objectContaining({ shell: true }),
+		);
+		expect(mockExeca).toHaveBeenNthCalledWith(
+			3,
+			"vitest run",
+			expect.objectContaining({ shell: true }),
+		);
+	});
+
 	it("function commands are skipped when no files match the glob", async () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"));
 		await writeFile(
