@@ -67,9 +67,9 @@ src/
 | `runAllChecks` | Function | `src/services/checks.ts:239` | Detect config → load → match → run checks |
 | `getStagedDiff` | Function | `src/services/git.ts:59` | Diff with exclude patterns, returns union type |
 | `attemptCommit` | Function | `src/services/git.ts:148` | `git commit -m` with real-time stderr collection |
-| `showRecoveryMenu` | Function | `src/ui/menu.ts:140` | 6-option recovery TUI (recursive on re-stage fail) |
-| `showStagingMenu` | Function | `src/ui/menu.ts:17` | Staging: select files / auto-group / run checks / stage all |
-| `showCheckFailureMenu` | Function | `src/ui/menu.ts:269` | Check failure: copy / view / skip / cancel |
+| `showRecoveryMenu` | Function | `src/ui/recovery-menu.ts` | 6-option recovery TUI (recursive on re-stage fail) |
+| `showStagingMenu` | Function | `src/ui/staging-menu.ts` | Staging: select files / auto-group / run checks / stage all |
+| `showCheckFailureMenu` | Function | `src/ui/check-failure-menu.ts` | Check failure: copy / view / skip / cancel, with concise tsc summary |
 | `reviewCommitMessage` | Function | `src/ui/review-message.ts` | Message review: use-as-is / edit / cancel |
 | `showGroupingConfirmation` | Function | `src/ui/grouping.ts` | Grouping confirmation with file list |
 | `Config` | Interface | `src/services/config.ts:15` | Config shape with per-provider model keys |
@@ -87,6 +87,7 @@ src/
 - **No index files** — direct imports from module files
 - **Tests**: Co-located `*.test.ts` siblings, `vi.mock(...)` at top, `vi.mocked(...)` for assertions
 - **Build**: `tsdown` (NOT tsup) — configured via CLI args only, no config file
+- **File size**: biome enforces `noExcessiveLinesPerFile` (400 line max). When a file exceeds this, split it into focused modules rather than adding biome-ignore. Each UI menu, command handler, or service should be its own file.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -97,6 +98,7 @@ src/
 - **NEVER hardcode model names** — use `getModelForProvider()` resolution chain (per-provider override → global model → provider default)
 - **NEVER add lint-staged dependency** — project uses cmint config files for pre-commit checks
 - **NEVER include `/openai/v1/` in Groq baseURL** — Groq SDK appends it internally; non-Groq providers use fetch client that appends `/chat/completions` directly
+- **NEVER add `biome-ignore lint/nursery/noExcessiveLinesPerFile`** — split the file into focused modules instead (see CONVENTIONS: File size)
 
 ## COMMANDS
 
