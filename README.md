@@ -2,6 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@kyubiware/commit-mint.svg)](https://www.npmjs.com/package/@kyubiware/commit-mint)
 [![CI](https://img.shields.io/github/actions/workflow/status/kyubiware/commit-mint/ci.yml)](https://github.com/kyubiware/commit-mint/actions)
+[![GitHub stars](https://img.shields.io/github/stars/kyubiware/commit-mint?style=flat&logo=github)](https://github.com/kyubiware/commit-mint)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-3c873a)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
