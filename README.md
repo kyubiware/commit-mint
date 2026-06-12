@@ -47,17 +47,16 @@ as a separate git hook.
 
 This matters for three reasons:
 
-**1. Failing checks never reach the AI.** commit-mint stages, runs checks, then
-generates the commit message. A failing check short-circuits before any API
+**1. Checks run before the AI call.** commit-mint runs checks before
+generating the commit message. A failing check short-circuits before any API
 call. With lint-staged, the hook fires after the message is already finalized
 (if the AI call was made) or the user has typed one in — so a broken check
 wastes the message.
 
 **2. Failures get a recovery menu, not raw stderr.** lint-staged prints whatever
 the tool emitted and exits. commit-mint parses biome, tsc, vitest/jest, eslint,
-and lint-staged output into structured errors, then shows a menu with copy,
-view, retry, skip, and cancel options — same shape as the hook failure menu
-you'd get on a `git commit` failure.
+and lint-staged output into structured errors. Then commit-mint lets you copy the error report to clipboard,
+so you can paste straight to your coding agent.
 
 **3. Live retry.** Fix the error in another terminal, pick "Retry checks" in
 the menu, no need to exit and re-run `cmint`.
