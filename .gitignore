@@ -6,3 +6,4 @@ dist/
 coverage/
 notes/
 .omo/
+.opencode/
