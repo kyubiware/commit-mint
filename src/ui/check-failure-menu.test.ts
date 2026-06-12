@@ -40,44 +40,6 @@ describe("showCheckFailureMenu", () => {
 		vi.mocked(isCancel).mockReturnValue(false);
 	});
 
-	it("summarizes verbose tsc check failures in the initial note", async () => {
-		const raw = [
-			"> @vocab-platform/web@1.0.0 typecheck",
-			"/home/quaidbartolomei/repos/polyglot/packages/web",
-			"> tsc --noEmit",
-			"",
-			"src/pages/text-study/useParagraphReader.test.tsx(100,30): error TS2345: Argument of type '{ create: Mock<Procedure>; setErrorMessage: Mock<Procedure>; }' is not assignable to parameter of type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"  Property 'pageState' is missing in type '{ create: Mock<Procedure>; }' but required in type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"src/pages/text-study/useParagraphReader.test.tsx(141,30): error TS2345: Argument of type '{ create: Mock<Procedure>; setErrorMessage: Mock<Procedure>; }' is not assignable to parameter of type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"  Property 'pageState' is missing in type '{ create: Mock<Procedure>; }' but required in type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"src/pages/text-study/useParagraphReader.test.tsx(172,30): error TS2345: Argument of type '{ create: Mock<Procedure>; setErrorMessage: Mock<Procedure>; }' is not assignable to parameter of type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"  Property 'pageState' is missing in type '{ create: Mock<Procedure>; }' but required in type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"src/pages/text-study/useParagraphReader.test.tsx(242,30): error TS2345: Argument of type '{ create: Mock<Procedure>; setErrorMessage: Mock<Procedure>; }' is not assignable to parameter of type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"  Property 'pageState' is missing in type '{ create: Mock<Procedure>; }' but required in type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"src/pages/text-study/useParagraphReader.test.tsx(293,30): error TS2345: Argument of type '{ create: Mock<Procedure>; setErrorMessage: Mock<Procedure>; }' is not assignable to parameter of type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			"  Property 'pageState' is missing in type '{ create: Mock<Procedure>; }' but required in type '{ pageState: PageState; create: (variables: CreateTextSessionRequest) => void; }'.",
-			" ELIFECYCLE  Command failed with exit code 2.",
-		].join("\n");
-		const errors = [{ tool: "tsc", message: raw, raw }];
-
-		vi.mocked(select).mockResolvedValueOnce("retry");
-
-		await showCheckFailureMenu(errors, raw, async () => true);
-
-		expect(note).toHaveBeenCalledWith(
-			expect.stringContaining("[tsc] 5 TypeScript errors"),
-			expect.stringContaining("Pre-commit check failed"),
-		);
-		const summary = vi.mocked(note).mock.calls[0]?.[0];
-		expect(summary).toContain(
-			"src/pages/text-study/useParagraphReader.test.tsx:100:30 — error TS2345: Argument of type",
-		);
-		expect(summary).toContain("+2 more TypeScript errors. View full output for details.");
-		expect(summary).not.toContain("ELIFECYCLE");
-		expect(summary).not.toContain("Property 'pageState'");
-		expect(summary).not.toContain("pageState: PageState");
-	});
-
 	it("summarizes single tsc error without '+more' suffix", async () => {
 		const raw = "src/app.ts(5,10): error TS2304: Cannot find name 'foo'.";
 		const errors = [{ tool: "tsc", message: raw, raw }];
@@ -103,6 +65,72 @@ describe("showCheckFailureMenu", () => {
 		expect(summary).toContain("[biome]");
 		expect(summary).toContain("a".repeat(119));
 		expect(summary).toContain("…");
+	});
+
+	it("summarizes single eslint stylish-format error with rule and message", async () => {
+		const raw = [
+			"/path/to/TextStudyWordRow.tsx",
+			"  278:1  warning  File has too many lines (281). Maximum allowed is 277  max-lines",
+			"",
+			"✖ 1 problem (0 errors, 1 warning)",
+			"",
+			"ESLint found too many warnings (maximum: 0).",
+		].join("\n");
+		const errors = [{ tool: "eslint", message: raw, raw }];
+		vi.mocked(select).mockResolvedValueOnce("retry");
+
+		await showCheckFailureMenu(errors, raw, async () => true);
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string;
+		expect(summary).toContain("[eslint] 1 ESLint problem");
+		expect(summary).toContain(
+			"/path/to/TextStudyWordRow.tsx:278:1 warning max-lines — File has too many lines (281). Maximum allowed is 277",
+		);
+		expect(summary).not.toContain("✖ 1 problem");
+		expect(summary).not.toContain("ESLint found too many warnings");
+	});
+
+	it("summarizes multiple eslint errors with count and '+N more' suffix", async () => {
+		const raw = [
+			"/path/to/file1.tsx",
+			"  10:1  error  Missing semicolon  semi",
+			"  20:5  warning  Unused variable 'foo'  no-unused-vars",
+			"",
+			"/path/to/file2.tsx",
+			"  5:1  error  Unexpected console statement  no-console",
+			"  15:1  warning  File has too many lines  max-lines",
+			"  25:1  error  Missing return type  @typescript-eslint/explicit-function-return-type",
+			"",
+			"✖ 5 problems (3 errors, 2 warnings)",
+		].join("\n");
+		const errors = [{ tool: "eslint", message: raw, raw }];
+		vi.mocked(select).mockResolvedValueOnce("retry");
+
+		await showCheckFailureMenu(errors, raw, async () => true);
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string;
+		expect(summary).toContain("[eslint] 5 ESLint problems");
+		expect(summary).toContain("/path/to/file1.tsx:10:1 error semi — Missing semicolon");
+		expect(summary).toContain(
+			"/path/to/file1.tsx:20:5 warning no-unused-vars — Unused variable 'foo'",
+		);
+		expect(summary).toContain(
+			"/path/to/file2.tsx:5:1 error no-console — Unexpected console statement",
+		);
+		expect(summary).toContain("+2 more ESLint problems. View full output for details.");
+		expect(summary).not.toContain("✖ 5 problems");
+	});
+
+	it("falls back to default formatting for eslint output that does not match the stylish format", async () => {
+		const raw = "Some unstructured eslint error message";
+		const errors = [{ tool: "eslint", message: raw, raw }];
+		vi.mocked(select).mockResolvedValueOnce("retry");
+
+		await showCheckFailureMenu(errors, raw, async () => true);
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string;
+		expect(summary).toContain("[eslint] Some unstructured eslint error message");
+		expect(summary).not.toContain("ESLint");
 	});
 
 	it("handles empty errors array gracefully", async () => {

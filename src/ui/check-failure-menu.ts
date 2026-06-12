@@ -5,9 +5,12 @@ import type { HookError } from "../services/hooks.js";
 import { debug } from "../utils/debug.js";
 
 const MAX_TSC_DIAGNOSTICS = 3;
+const MAX_ESLINT_DIAGNOSTICS = 3;
 const MAX_SUMMARY_LINE_LENGTH = 120;
 const TSC_DIAGNOSTIC =
 	/^(.+?\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs))\((\d+),(\d+)\):\s+error\s+(TS\d+):\s+(.+)$/;
+// ESLint stylish format: <whitespace><line>:<col>  <severity>  <message>  <rule>
+const ESLINT_ERROR_LINE = /^\s*(\d+):(\d+)\s+(error|warning)\s+(.+)\s{2,}(\S+)\s*$/;
 
 interface TscDiagnostic {
 	file: string;
@@ -15,6 +18,15 @@ interface TscDiagnostic {
 	column: string;
 	code: string;
 	message: string;
+}
+
+interface EslintDiagnostic {
+	file: string;
+	line: string;
+	column: string;
+	severity: string;
+	message: string;
+	rule: string;
 }
 
 function formatCheckFailureSummary(errors: HookError[]): string {
@@ -30,6 +42,13 @@ function formatCheckErrorSummary(error: HookError): string {
 		const diagnostics = extractTscDiagnostics(error.raw || error.message);
 		if (diagnostics.length > 0) {
 			return formatTscSummary(diagnostics);
+		}
+	}
+
+	if (error.tool === "eslint") {
+		const diagnostics = extractEslintDiagnostics(error.raw || error.message);
+		if (diagnostics.length > 0) {
+			return formatEslintSummary(diagnostics);
 		}
 	}
 
@@ -70,6 +89,58 @@ function formatTscSummary(diagnostics: TscDiagnostic[]): string {
 		lines.push(
 			dim(
 				`    +${hidden} more TypeScript error${hidden !== 1 ? "s" : ""}. View full output for details.`,
+			),
+		);
+	}
+
+	return lines.join("\n");
+}
+
+function extractEslintDiagnostics(raw: string): EslintDiagnostic[] {
+	const diagnostics: EslintDiagnostic[] = [];
+	const lines = raw.split("\n");
+	let currentFile = "";
+
+	for (const line of lines) {
+		// File path line: not indented, contains a path separator, not an error detail line
+		if (!/^\s/.test(line) && line.includes("/") && !ESLINT_ERROR_LINE.test(line)) {
+			currentFile = line.trim();
+			continue;
+		}
+
+		const match = ESLINT_ERROR_LINE.exec(line);
+		if (match) {
+			diagnostics.push({
+				file: currentFile || "unknown",
+				line: match[1] ?? "",
+				column: match[2] ?? "",
+				severity: match[3] ?? "",
+				message: (match[4] ?? "").trim(),
+				rule: match[5] ?? "",
+			});
+		}
+	}
+
+	return diagnostics;
+}
+
+function formatEslintSummary(diagnostics: EslintDiagnostic[]): string {
+	const visible = diagnostics.slice(0, MAX_ESLINT_DIAGNOSTICS);
+	const hidden = diagnostics.length - visible.length;
+	const count = diagnostics.length;
+	const noun = count === 1 ? "problem" : "problems";
+	const lines = [
+		`  ${red("•")} [eslint] ${count} ESLint ${noun}`,
+		...visible.map(
+			(diagnostic) =>
+				`${diagnostic.file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.severity} ${diagnostic.rule} — ${truncate(diagnostic.message, MAX_SUMMARY_LINE_LENGTH)}`,
+		),
+	];
+
+	if (hidden > 0) {
+		lines.push(
+			dim(
+				`    +${hidden} more ESLint ${hidden === 1 ? "problem" : "problems"}. View full output for details.`,
 			),
 		);
 	}
