@@ -137,6 +137,9 @@ import { saveCachedCommit } from "../utils/cache.js";
 describe("commitCommand", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Preflight in commitCommand calls getRepoRoot — set a sensible default
+		// so tests that don't override it still pass through the preflight.
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
 		// Default: checks pass (no-op) so existing tests reach message generation
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] });
 	});

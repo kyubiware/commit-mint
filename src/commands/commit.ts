@@ -27,6 +27,7 @@ import {
 } from "./auto-group.js";
 import { commitWithRecovery } from "./commit-utils.js";
 import { handleRetry } from "./retry.js";
+import { runPreflightSetupPrompt } from "./setup.js";
 import { handleStaging, runPreCommitChecks } from "./staging.js";
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Sequential CLI lifecycle orchestrator
@@ -39,6 +40,10 @@ export async function commitCommand(flags: CommitFlags) {
 	if (flags.retry) {
 		return handleRetry();
 	}
+
+	// ── Preflight: nudge the user to set up .cmintrc if it's missing ─
+	const repoRoot = await getRepoRoot();
+	await runPreflightSetupPrompt(repoRoot);
 
 	// ── Normal mode ─────────────────────────────────────────────────
 	intro("🌿 commit-mint");
@@ -104,7 +109,6 @@ export async function commitCommand(flags: CommitFlags) {
 
 		log.info(diffResult.excludedFiles.map((f) => `     ${f}`).join("\n"));
 
-		const repoRoot = await getRepoRoot();
 		await saveCachedCommit(repoRoot, message);
 
 		s.start("Running pre-commit hooks...");
@@ -180,7 +184,6 @@ export async function commitCommand(flags: CommitFlags) {
 	message = reviewed;
 
 	// Cache message before attempting commit
-	const repoRoot = await getRepoRoot();
 	await saveCachedCommit(repoRoot, message);
 	debug("Message cached for repo:", repoRoot);
 
