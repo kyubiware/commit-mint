@@ -32,6 +32,13 @@ jobs:
 
       - run: npm publish --provenance --access public
 
+      - name: Publish cmint forwarding package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd packages/cmint
+          npm pkg set version="$VERSION"
+          npm publish
+
       - name: Generate changelog
         id: changelog
         run: |
