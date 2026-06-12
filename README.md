@@ -58,7 +58,7 @@ the tool emitted and exits. commit-mint parses biome, tsc, vitest/jest, eslint,
 and lint-staged output into structured errors. Then commit-mint lets you copy the error report to clipboard,
 so you can paste straight to your coding agent.
 
-**3. Live retry.** Fix the error in another terminal, pick "Retry checks" in
+**3. Live retry.** After your coding agent fixes the error in another terminal, pick "Retry checks" in
 the menu, no need to exit and re-run `cmint`.
 
 Same syntax, fewer moving parts, and the checks live in the same process as
