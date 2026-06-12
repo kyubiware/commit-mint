@@ -1,5 +1,8 @@
 {
-	"name": "cmint",
+	"name": "@kyubiware/cmint",
+	"publishConfig": {
+		"access": "public"
+	},
 	"version": "0.5.6",
 	"description": "AI commit messages that handle hook failures",
 	"type": "module",

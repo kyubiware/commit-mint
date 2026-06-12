@@ -9,6 +9,7 @@ import {
 	type ProviderName,
 } from "../services/provider.js";
 import { debug } from "../utils/debug.js";
+import { setupCmintrcCommand } from "./setup.js";
 
 function maskKey(key: string | undefined): string {
 	if (!key) return dim("not set");
@@ -226,6 +227,7 @@ export async function configCommand(): Promise<void> {
 			message: "What would you like to do?",
 			options: [
 				{ label: "Edit settings", value: "edit" },
+				{ label: "Setup .cmintrc", value: "setup" },
 				{ label: "Done", value: "done" },
 			],
 		});
@@ -240,6 +242,12 @@ export async function configCommand(): Promise<void> {
 			debug("configCommand: done");
 			p.outro("Config saved.");
 			return;
+		}
+
+		if (action === "setup") {
+			debug("configCommand: starting .cmintrc setup");
+			await setupCmintrcCommand();
+			continue;
 		}
 
 		await editSettingsLoop(config);
