@@ -125,7 +125,8 @@ export async function runPreCommitChecks(
 			process.exit(1);
 		}
 		if (menuResult === "retried") {
-			debug("Re-running checks after retry...");
+			debug("Re-staging files and re-running checks after retry...");
+			await stageAll();
 			const ckSpinner = spinner();
 			ckSpinner.start("Running checks...");
 			checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
