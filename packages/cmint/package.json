@@ -1,0 +1,30 @@
+{
+	"name": "cmint",
+	"version": "0.5.6",
+	"description": "AI commit messages that handle hook failures",
+	"type": "module",
+	"bin": {
+		"cmint": "cli.mjs"
+	},
+	"dependencies": {
+		"@kyubiware/commit-mint": "^0.5.6"
+	},
+	"files": [
+		"cli.mjs"
+	],
+	"keywords": [
+		"git",
+		"commit",
+		"hooks",
+		"pre-commit",
+		"ai",
+		"groq",
+		"conventional-commits",
+		"cli"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/kyubiware/commit-mint.git"
+	}
+}
