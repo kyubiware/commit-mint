@@ -2,7 +2,37 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildCmintrcContent, type DetectedTools, detectTools, pickFileName } from "./setup.js";
+import {
+	buildCmintrcContent,
+	type DetectedTools,
+	detectTools,
+	hasSkipSetupMarker,
+	isAutoConfigurable,
+	pickFileName,
+	runPreflightSetupPrompt,
+	SKIP_SETUP_MARKER,
+	writeSkipSetupMarker,
+} from "./setup.js";
+
+// --- Mock @clack/prompts for the preflight prompt tests ---
+const { mockSelect, mockConfirm, mockIsCancel, mockLog } = vi.hoisted(() => ({
+	mockSelect: vi.fn(),
+	mockConfirm: vi.fn(),
+	mockIsCancel: vi.fn(),
+	mockLog: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		success: vi.fn(),
+		message: vi.fn(),
+	},
+}));
+
+vi.mock("@clack/prompts", () => ({
+	select: mockSelect,
+	confirm: mockConfirm,
+	isCancel: mockIsCancel,
+	log: mockLog,
+}));
 
 // --- Mock node:fs/promises for fs access checks ---
 const { mockAccess, mockWriteFile } = vi.hoisted(() => ({
@@ -182,5 +212,187 @@ describe("detectTools", () => {
 		mockAccess.mockResolvedValue(undefined);
 		const result = await detectTools(tmpDir);
 		expect(result).toEqual({ biome: true, eslint: true, typescript: true, vitest: true });
+	});
+});
+
+describe("isAutoConfigurable", () => {
+	it("returns true when any tool is detected", () => {
+		expect(isAutoConfigurable({ ...NONE, biome: true })).toBe(true);
+		expect(isAutoConfigurable({ ...NONE, eslint: true })).toBe(true);
+		expect(isAutoConfigurable({ ...NONE, typescript: true })).toBe(true);
+		expect(isAutoConfigurable({ ...NONE, vitest: true })).toBe(true);
+	});
+
+	it("returns true when multiple tools are detected", () => {
+		expect(isAutoConfigurable({ ...NONE, biome: true, typescript: true })).toBe(true);
+	});
+
+	it("returns false when no tools are detected", () => {
+		expect(isAutoConfigurable(NONE)).toBe(false);
+	});
+});
+
+describe("hasSkipSetupMarker", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		mockAccess.mockReset();
+	});
+
+	afterEach(async () => {
+		if (tmpDir) {
+			await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	it("returns true when the marker file exists", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		await writeFile(join(tmpDir, SKIP_SETUP_MARKER), "");
+		mockAccess.mockResolvedValueOnce(undefined);
+		await expect(hasSkipSetupMarker(tmpDir)).resolves.toBe(true);
+	});
+
+	it("returns false when the marker file is missing", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+		await expect(hasSkipSetupMarker(tmpDir)).resolves.toBe(false);
+	});
+});
+
+describe("writeSkipSetupMarker", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		mockAccess.mockReset();
+		mockWriteFile.mockReset();
+	});
+
+	afterEach(async () => {
+		if (tmpDir) {
+			await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	it("writes an empty file at the marker path", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		mockWriteFile.mockResolvedValueOnce(undefined);
+		await writeSkipSetupMarker(tmpDir);
+		expect(mockWriteFile).toHaveBeenCalledWith(join(tmpDir, SKIP_SETUP_MARKER), "", "utf-8");
+	});
+});
+
+describe("runPreflightSetupPrompt", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		mockAccess.mockReset();
+		mockWriteFile.mockReset();
+		mockSelect.mockReset();
+		mockConfirm.mockReset();
+		mockIsCancel.mockReset();
+		mockLog.info.mockReset();
+		mockLog.warn.mockReset();
+		mockLog.success.mockReset();
+		mockLog.message.mockReset();
+	});
+
+	afterEach(async () => {
+		if (tmpDir) {
+			await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+		}
+	});
+
+	it("returns early when the skip-setup marker exists", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		await writeFile(join(tmpDir, SKIP_SETUP_MARKER), "");
+		mockAccess.mockResolvedValueOnce(undefined); // hasSkipSetupMarker
+		await runPreflightSetupPrompt(tmpDir);
+		// No prompt should be shown
+		expect(mockSelect).not.toHaveBeenCalled();
+	});
+
+	it("returns early when a .cmintrc is already present", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		await writeFile(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }));
+		await writeFile(join(tmpDir, ".cmintrc.js"), `export default {};`);
+		// Reject the SKIP_SETUP_MARKER probe, then resolve on .cmintrc
+		mockAccess
+			.mockRejectedValueOnce(new Error("ENOENT")) // hasSkipSetupMarker
+			.mockResolvedValueOnce(undefined); // detectConfig first match
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockSelect).not.toHaveBeenCalled();
+	});
+
+	it("returns early when the project has no detectable tools", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		// Reject SKIP_SETUP_MARKER probe, then reject all 14 detectConfig probes,
+		// then reject all 17 detectTools probes
+		mockAccess.mockRejectedValue(new Error("ENOENT"));
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockSelect).not.toHaveBeenCalled();
+	});
+
+	it("prompts the user when no .cmintrc and project is auto-configurable", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		await writeFile(join(tmpDir, "biome.json"), "{}");
+		// SKIP_SETUP_MARKER probe rejects
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+		// All 14 detectConfig probes reject
+		for (let i = 0; i < 14; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+		// biome.json resolves; remaining detectTools probes reject
+		mockAccess.mockResolvedValueOnce(undefined);
+		for (let i = 0; i < 16; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+
+		mockSelect.mockResolvedValueOnce("no");
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockSelect).toHaveBeenCalledTimes(1);
+		expect(mockSelect).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: expect.stringContaining("Run setup"),
+			}),
+		);
+	});
+
+	it("writes the skip-setup marker when user picks 'never'", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		await writeFile(join(tmpDir, "tsconfig.json"), "{}");
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // SKIP marker
+		for (let i = 0; i < 14; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // detectConfig
+		for (let i = 0; i < 12; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // detectTools (biome, eslint)
+		mockAccess.mockResolvedValueOnce(undefined); // tsconfig.json resolves
+		for (let i = 0; i < 4; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // vitest probes
+
+		mockSelect.mockResolvedValueOnce("never");
+		mockWriteFile.mockResolvedValueOnce(undefined);
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockWriteFile).toHaveBeenCalledWith(join(tmpDir, SKIP_SETUP_MARKER), "", "utf-8");
+	});
+
+	it("does not write the marker when user picks 'no'", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		// The access mock fakes file existence — no need to actually write files.
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // SKIP marker
+		for (let i = 0; i < 14; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // detectConfig
+		mockAccess.mockResolvedValueOnce(undefined); // biome.json
+		for (let i = 0; i < 16; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT")); // remaining detectTools
+
+		mockSelect.mockResolvedValueOnce("no");
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockWriteFile).not.toHaveBeenCalled();
+	});
+
+	it("returns silently when user cancels the prompt", async () => {
+		tmpDir = await mkdtemp(join(tmpdir(), "cmint-setup-"));
+		mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+		for (let i = 0; i < 14; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+		mockAccess.mockResolvedValueOnce(undefined);
+		for (let i = 0; i < 16; i++) mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
+
+		const cancelSymbol = Symbol("cancel");
+		mockSelect.mockResolvedValueOnce(cancelSymbol);
+		mockIsCancel.mockReturnValueOnce(true);
+		await runPreflightSetupPrompt(tmpDir);
+		expect(mockWriteFile).not.toHaveBeenCalled();
+		expect(mockConfirm).not.toHaveBeenCalled();
 	});
 });

@@ -2,6 +2,7 @@ import { access, constants, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as p from "@clack/prompts";
 import { bold, dim, green, yellow } from "kolorist";
+import { detectConfig } from "../services/checks.js";
 import { debug } from "../utils/debug.js";
 
 /** Marker files for each tool. First match wins per tool. */
@@ -106,12 +107,13 @@ function formatDetection(tools: DetectedTools): string {
 
 /**
  * Interactive setup for `.cmintrc`. Detects biome/eslint/typescript/vitest in
- * the current working directory, previews the generated config, and writes
- * the file after confirmation. Refuses to overwrite without explicit consent.
+ * the given directory, previews the generated config, and writes the file
+ * after confirmation. Refuses to overwrite without explicit consent. Defaults
+ * to `process.cwd()` when called from the `cmint config` menu; the preflight
+ * caller passes the repo root explicitly.
  */
-export async function setupCmintrcCommand(): Promise<void> {
-	debug("setupCmintrcCommand: starting");
-	const cwd = process.cwd();
+export async function setupCmintrcCommand(cwd: string = process.cwd()): Promise<void> {
+	debug("setupCmintrcCommand: starting in %s", cwd);
 	const tools = await detectTools(cwd);
 
 	p.log.info(`Detected tools in ${bold(cwd)}:`);
@@ -154,4 +156,84 @@ export async function setupCmintrcCommand(): Promise<void> {
 	await writeFile(filePath, content, "utf-8");
 	debug("setupCmintrcCommand: wrote %s", filePath);
 	p.log.success(green(`Wrote ${fileName}`));
+}
+
+// ── Preflight prompt ──────────────────────────────────────────────────────
+
+/** Project-local marker file that suppresses the preflight prompt forever. */
+export const SKIP_SETUP_MARKER = ".cmint-skip-setup";
+
+/** True if at least one of biome/eslint/typescript/vitest is present. */
+export function isAutoConfigurable(tools: DetectedTools): boolean {
+	return Object.values(tools).some(Boolean);
+}
+
+/** True if the skip-setup marker exists in `cwd`. */
+export async function hasSkipSetupMarker(cwd: string): Promise<boolean> {
+	return exists(join(cwd, SKIP_SETUP_MARKER));
+}
+
+/** Write the skip-setup marker to `cwd`. The file is empty by design. */
+export async function writeSkipSetupMarker(cwd: string): Promise<void> {
+	const filePath = join(cwd, SKIP_SETUP_MARKER);
+	await writeFile(filePath, "", "utf-8");
+	debug("preflight: wrote skip-setup marker to %s", filePath);
+}
+
+/**
+ * One-shot prompt run at the start of `cmint`. Skips silently if the user
+ * already has a `.cmintrc` or has previously opted out (`.cmint-skip-setup`).
+ * If the project is auto-configurable, asks the user whether to run setup
+ * now. Choices: `yes` runs the standard setup flow; `no` proceeds without
+ * setup and re-prompts next time; `never` writes a marker to suppress the
+ * prompt for this project forever.
+ */
+export async function runPreflightSetupPrompt(cwd: string): Promise<void> {
+	debug("preflight: checking %s", cwd);
+
+	if (await hasSkipSetupMarker(cwd)) {
+		debug("preflight: skip-setup marker present, skipping prompt");
+		return;
+	}
+
+	const existingConfig = await detectConfig(cwd);
+	if (existingConfig) {
+		debug("preflight: .cmintrc present at %s, skipping prompt", existingConfig);
+		return;
+	}
+
+	const tools = await detectTools(cwd);
+	if (!isAutoConfigurable(tools)) {
+		debug("preflight: project not auto-configurable, skipping prompt");
+		return;
+	}
+
+	const choice = await p.select({
+		message: "No .cmintrc found. Run setup to create one from detected tools?",
+		options: [
+			{ label: "Yes, set up .cmintrc", value: "yes" },
+			{ label: "No, skip for now", value: "no" },
+			{ label: "No, don't ask again", value: "never" },
+		],
+	});
+
+	if (p.isCancel(choice)) {
+		debug("preflight: user cancelled prompt");
+		return;
+	}
+
+	if (choice === "never") {
+		await writeSkipSetupMarker(cwd);
+		p.log.info(dim(`Won't ask again. Delete ${SKIP_SETUP_MARKER} to re-enable.`));
+		return;
+	}
+
+	if (choice === "no") {
+		p.log.info(dim("Skipping .cmintrc setup."));
+		return;
+	}
+
+	// "yes" — run the standard setup flow (with its own confirmations).
+	debug("preflight: user chose yes, running setup");
+	await setupCmintrcCommand(cwd);
 }
