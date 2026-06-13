@@ -118,11 +118,22 @@ function buildGroupingUserPrompt(summary: string): string {
 	return ["Group the following changed files into logical commits:", "", summary].join("\n");
 }
 
-function parseGroupingResponse(content: string): CommitGroup[] {
-	const jsonText = content
-		.replace(/^```json\s*/, "")
-		.replace(/\s*```$/, "")
+export function parseGroupingResponse(content: string): CommitGroup[] {
+	// Strip think tags from reasoning models
+	let cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").trim();
+	// Strip markdown code fences
+	cleaned = cleaned
+		.replace(/^```(?:json)?\s*/i, "")
+		.replace(/\s*```$/i, "")
 		.trim();
+
+	// Extract the outermost JSON array — handles text before/after the array
+	const start = cleaned.indexOf("[");
+	const end = cleaned.lastIndexOf("]");
+	if (start === -1 || end === -1 || end <= start) {
+		throw new Error("AI response did not contain a JSON array");
+	}
+	const jsonText = cleaned.slice(start, end + 1);
 	const parsed = JSON.parse(jsonText) as unknown;
 
 	if (!Array.isArray(parsed)) {

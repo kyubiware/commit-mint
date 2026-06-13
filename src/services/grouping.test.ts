@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangedFile } from "./git.js";
-import { buildGroupingSystemPrompt, filterExcludedFiles, validateGroups } from "./grouping.js";
+import {
+	buildGroupingSystemPrompt,
+	filterExcludedFiles,
+	parseGroupingResponse,
+	validateGroups,
+} from "./grouping.js";
 
 const mockCreateProvider = vi.hoisted(() => vi.fn());
 
@@ -213,6 +218,87 @@ describe("validateGroups", () => {
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe("Other changes");
 		expect(result[0].files).toEqual(["src/real.ts"]);
+	});
+});
+
+describe("parseGroupingResponse", () => {
+	it("parses plain JSON array", () => {
+		const content = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+		]);
+		const groups = parseGroupingResponse(content);
+		expect(groups).toHaveLength(1);
+		expect(groups[0].name).toBe("Backend");
+		expect(groups[0].files).toEqual(["src/api.ts"]);
+	});
+
+	it("extracts JSON from markdown code fences", () => {
+		const content =
+			"```json\n" +
+			JSON.stringify([{ name: "Backend", description: "API changes", files: ["src/api.ts"] }]) +
+			"\n```";
+		const groups = parseGroupingResponse(content);
+		expect(groups).toHaveLength(1);
+		expect(groups[0].name).toBe("Backend");
+	});
+
+	it("extracts JSON when model adds explanation after the array", () => {
+		const groups = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+			{ name: "Tests", description: "Test updates", files: ["src/api.test.ts"] },
+		]);
+		const content =
+			groups +
+			"\n\nI grouped these files by separating the backend API logic from the test suite. The API changes are all in one commit for atomicity.";
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(2);
+		expect(result[0].name).toBe("Backend");
+		expect(result[1].name).toBe("Tests");
+	});
+
+	it("extracts JSON when model adds text before the array", () => {
+		const groups = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+		]);
+		const content = "Here are the grouped files:\n\n" + groups;
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Backend");
+	});
+
+	it("extracts JSON from think tags followed by JSON array", () => {
+		const groups = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+		]);
+		const content = "<think\nLet me analyze these files...\n</think\n\n" + groups;
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Backend");
+	});
+
+	it("extracts JSON from fenced block with trailing explanation", () => {
+		const groups = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+		]);
+		const content = "```json\n" + groups + "\n```\n\nNote: I kept related files together.";
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Backend");
+	});
+
+	it("skips items missing required fields", () => {
+		const content = JSON.stringify([
+			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
+			{ name: "No files" },
+			{ description: "No name", files: ["src/other.ts"] },
+		]);
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Backend");
+	});
+
+	it("throws when no JSON array found", () => {
+		expect(() => parseGroupingResponse("No JSON here at all")).toThrow();
 	});
 });
 
