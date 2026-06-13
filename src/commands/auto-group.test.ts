@@ -142,7 +142,7 @@ describe("runAutoGroupFlow loop control", () => {
 		{ status: "M", path: "src/b.ts", staged: true },
 	];
 
-	const flags: CommitFlags = { retry: false, auto: false };
+	const flags: CommitFlags = { retry: false, auto: false, agent: false };
 
 	const twoGroups = [
 		{ name: "Group 1", description: "desc", files: ["src/a.ts"] },
@@ -243,7 +243,7 @@ describe("runAutoGroupFlow check integration", () => {
 		{ status: "M", path: "src/b.ts", staged: true },
 	];
 
-	const flags: CommitFlags = { retry: false, auto: false };
+	const flags: CommitFlags = { retry: false, auto: false, agent: false };
 
 	const twoGroups = [
 		{ name: "Group 1", description: "desc", files: ["src/a.ts"] },
@@ -362,7 +362,7 @@ describe("runAutoGroupFlow excluded files handling", () => {
 		vi.resetAllMocks();
 	});
 
-	const flags: CommitFlags = { retry: false, auto: true };
+	const flags: CommitFlags = { retry: false, auto: true, agent: false };
 
 	function setupExcludedOnlyMocks() {
 		// Only excluded files (e.g. bun.lock with no package.json change)

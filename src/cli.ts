@@ -4,8 +4,10 @@ import pkg from "../package.json" with { type: "json" };
 
 const { version } = pkg;
 
+import { agentCommand } from "./commands/agent.js";
 import { commitCommand } from "./commands/commit.js";
 import { configCommand } from "./commands/config.js";
+import { setAgentMode } from "./utils/agent.js";
 import { setDebug } from "./utils/debug.js";
 
 cli(
@@ -48,6 +50,11 @@ cli(
 				alias: "N",
 				default: false,
 			},
+			agent: {
+				type: Boolean,
+				description: "AI agent mode: non-interactive auto-group with JSON output",
+				default: false,
+			},
 		},
 		commands: [
 			command({ name: "config" }, async () => {
@@ -57,6 +64,11 @@ cli(
 	},
 	(argv) => {
 		setDebug(argv.flags.debug);
-		commitCommand(argv.flags);
+		if (argv.flags.agent) {
+			setAgentMode(true);
+			agentCommand(argv.flags);
+		} else {
+			commitCommand(argv.flags);
+		}
 	},
 );

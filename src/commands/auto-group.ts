@@ -38,6 +38,7 @@ import { debug } from "../utils/debug.js";
 export interface CommitFlags {
 	retry: boolean;
 	auto: boolean;
+	agent: boolean;
 	message?: string;
 	hint?: string;
 	noCheck?: boolean;

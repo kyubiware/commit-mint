@@ -164,7 +164,7 @@ describe("commitCommand", () => {
 		);
 
 		// Should NOT throw — errors should be caught and handled gracefully
-		await expect(commitCommand({ retry: false, auto: false })).resolves.not.toThrow();
+		await expect(commitCommand({ retry: false, auto: false, agent: false })).resolves.not.toThrow();
 	});
 
 	it("prompts for API key when missing, saves it, then continues", async () => {
@@ -193,7 +193,7 @@ describe("commitCommand", () => {
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("abc123");
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		// Should have prompted for the key
 		expect(text).toHaveBeenCalledWith(
@@ -225,7 +225,7 @@ describe("commitCommand", () => {
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456");
 
-		await commitCommand({ retry: false, auto: false, hint: "refactor auth" });
+		await commitCommand({ retry: false, auto: false, agent: false, hint: "refactor auth" });
 
 		expect(generateCommitMessage).toHaveBeenCalledWith("some diff content", {
 			apiKey: "gsk_test_key",
@@ -255,7 +255,7 @@ describe("commitCommand", () => {
 		});
 		vi.mocked(generateCommitMessage).mockRejectedValue(new Error("Groq API error: rate limit"));
 
-		await expect(commitCommand({ retry: false, auto: false })).resolves.not.toThrow();
+		await expect(commitCommand({ retry: false, auto: false, agent: false })).resolves.not.toThrow();
 
 		const { outro } = await import("@clack/prompts");
 		expect(vi.mocked(outro)).toHaveBeenCalledWith(expect.stringContaining("rate limit"));
@@ -274,7 +274,7 @@ describe("commitCommand", () => {
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456");
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		// Should NOT call AI — message is hardcoded
 		expect(generateCommitMessage).not.toHaveBeenCalled();
@@ -314,7 +314,7 @@ describe("commitCommand", () => {
 		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
 		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456");
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		expect(showStagingMenu).toHaveBeenCalledWith(
 			[
@@ -358,7 +358,7 @@ describe("commitCommand check integration", () => {
 	it("checks run and pass → message generation proceeds", async () => {
 		setupBaseFlow();
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		// runAllChecks was called with the staged file list
 		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000);
@@ -384,7 +384,7 @@ describe("commitCommand check integration", () => {
 		});
 		vi.mocked(stageAll).mockResolvedValue(undefined);
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		// Deleted file should NOT be in the check list
 		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000);
@@ -417,7 +417,7 @@ describe("commitCommand check integration", () => {
 		vi.mocked(parseCheckErrors).mockReturnValue(parsedErrors);
 		vi.mocked(showCheckFailureMenu).mockResolvedValue("skipped");
 
-		await commitCommand({ retry: false, auto: false });
+		await commitCommand({ retry: false, auto: false, agent: false });
 
 		// parseCheckErrors was called with combined output
 		expect(parseCheckErrors).toHaveBeenCalledWith(expect.stringContaining("[biome]"));
@@ -465,7 +465,7 @@ describe("commitCommand check integration", () => {
 			throw new Error(`process.exit called with ${code}`);
 		});
 
-		await expect(commitCommand({ retry: false, auto: false })).rejects.toThrow(
+		await expect(commitCommand({ retry: false, auto: false, agent: false })).rejects.toThrow(
 			"process.exit called with 1",
 		);
 
@@ -485,7 +485,7 @@ describe("commitCommand check integration", () => {
 	it("--no-check → checks skipped entirely", async () => {
 		setupBaseFlow();
 
-		await commitCommand({ retry: false, auto: false, noCheck: true });
+		await commitCommand({ retry: false, auto: false, agent: false, noCheck: true });
 
 		// runAllChecks was NEVER called
 		expect(runAllChecks).not.toHaveBeenCalled();
