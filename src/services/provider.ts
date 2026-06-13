@@ -99,7 +99,7 @@ function createFetchClient(baseURL: string, apiKey: string, timeout: number) {
 	};
 }
 
-type ChatClient = Pick<Groq, "chat">;
+export type ChatClient = Pick<Groq, "chat">;
 
 export function createProvider(options: {
 	provider: ProviderName;
