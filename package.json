@@ -15,7 +15,7 @@
 		"dev:auto": "tsx src/cli.ts -a",
 		"dev:debug": "tsx src/cli.ts --debug",
 		"lint": "biome check .",
-		"lint:fix": "biome check --fix .",
+		"lint:fix": "biome check --write --unsafe .",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
