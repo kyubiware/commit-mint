@@ -262,7 +262,7 @@ describe("parseGroupingResponse", () => {
 		const groups = JSON.stringify([
 			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
 		]);
-		const content = "Here are the grouped files:\n\n" + groups;
+		const content = `Here are the grouped files:\n\n${groups}`;
 		const result = parseGroupingResponse(content);
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe("Backend");
@@ -272,7 +272,7 @@ describe("parseGroupingResponse", () => {
 		const groups = JSON.stringify([
 			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
 		]);
-		const content = "<think\nLet me analyze these files...\n</think\n\n" + groups;
+		const content = `<think\nLet me analyze these files...\n</think\n\n${groups}`;
 		const result = parseGroupingResponse(content);
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe("Backend");
@@ -282,7 +282,7 @@ describe("parseGroupingResponse", () => {
 		const groups = JSON.stringify([
 			{ name: "Backend", description: "API changes", files: ["src/api.ts"] },
 		]);
-		const content = "```json\n" + groups + "\n```\n\nNote: I kept related files together.";
+		const content = `\`\`\`json\n${groups}\n\`\`\`\n\nNote: I kept related files together.`;
 		const result = parseGroupingResponse(content);
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe("Backend");
