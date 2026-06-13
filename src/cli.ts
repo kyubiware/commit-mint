@@ -7,8 +7,9 @@ const { version } = pkg;
 import { agentCommand } from "./commands/agent.js";
 import { commitCommand } from "./commands/commit.js";
 import { configCommand } from "./commands/config.js";
+import { logsCommand } from "./commands/logs.js";
 import { setAgentMode } from "./utils/agent.js";
-import { setDebug } from "./utils/debug.js";
+import { setDebug, writeSessionHeader } from "./utils/debug.js";
 
 cli(
 	{
@@ -57,12 +58,29 @@ cli(
 			},
 		},
 		commands: [
+			command(
+				{
+					name: "logs",
+					description: "Show debug logs from the last cmint run",
+					flags: {
+						lines: {
+							type: Number,
+							description: "Number of lines to show from the end",
+							alias: "n",
+						},
+					},
+				},
+				async (argv) => {
+					await logsCommand(argv.flags);
+				},
+			),
 			command({ name: "config" }, async () => {
 				await configCommand();
 			}),
 		],
 	},
 	(argv) => {
+		writeSessionHeader();
 		setDebug(argv.flags.debug);
 		if (argv.flags.agent) {
 			setAgentMode(true);
