@@ -2,7 +2,12 @@ import { debug } from "../utils/debug.js";
 import { mapGroqError } from "./ai.js";
 import type { ChangedFile } from "./git.js";
 import { getDefaultExcludes } from "./git.js";
-import { createProvider, formatProviderName, type ProviderName } from "./provider.js";
+import {
+	type ChatClient,
+	createProvider,
+	formatProviderName,
+	type ProviderName,
+} from "./provider.js";
 
 export interface CommitGroup {
 	name: string;
@@ -118,6 +123,30 @@ function buildGroupingUserPrompt(summary: string): string {
 	return ["Group the following changed files into logical commits:", "", summary].join("\n");
 }
 
+export function buildRetryGroupingPrompt(): string {
+	return [
+		"PREVIOUS ATTEMPT FAILED: You grouped all files into a single group.",
+		"",
+		"You MUST split the files into at least 2 groups based on what changed and why.",
+		"",
+		"Look for these natural split points:",
+		"- Source code vs tests",
+		"- Different features or modules (e.g., different directories)",
+		"- New files vs modified files vs deleted files",
+		"- Configuration changes vs code changes",
+		"- Documentation vs implementation",
+		"",
+		"If unsure, err on the side of MORE groups, not fewer.",
+		"",
+		"Output format: JSON array of objects with keys 'name', 'description', 'files'.",
+		"name: short label (3-5 words)",
+		"description: 1-2 sentences explaining what this group changes",
+		"files: array of exact file paths from the input",
+		"",
+		"Output ONLY valid JSON. No markdown fences, no explanation.",
+	].join("\n");
+}
+
 export function parseGroupingResponse(content: string): CommitGroup[] {
 	// Strip think tags from reasoning models
 	let cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").trim();
@@ -161,7 +190,6 @@ export function parseGroupingResponse(content: string): CommitGroup[] {
 	return rawGroups;
 }
 
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Multi-step generation flow
 export async function generateGroups(
 	files: ChangedFile[],
 	apiKey: string,
@@ -196,36 +224,20 @@ export async function generateGroups(
 	});
 
 	try {
-		const completion = await client.chat.completions.create({
-			messages: [
-				{ role: "system", content: systemPrompt },
-				{ role: "user", content: userPrompt },
-			],
-			model: resolvedModel,
-			temperature: 0.3,
-			max_tokens: 2048,
-		});
-
-		const rawContent = completion.choices[0]?.message?.content;
-		const content = typeof rawContent === "string" ? rawContent.trim() : "";
-
-		debug(
-			"generateGroups response: choices=%d, finishReason=%s, contentLen=%d",
-			completion.choices.length,
-			completion.choices[0]?.finish_reason ?? "(none)",
-			content.length,
-		);
-		debug("generateGroups raw content: %s", content.slice(0, 500) || "(empty)");
-
-		if (!content) {
-			throw new Error("AI returned an empty grouping response");
-		}
-
-		const rawGroups = parseGroupingResponse(content);
-
+		let rawGroups = await callGroupingAI(client, resolvedModel, systemPrompt, userPrompt);
 		debug("generateGroups: parsed %d raw groups", rawGroups.length);
-		const validated = validateGroups(rawGroups, included);
+		let validated = validateGroups(rawGroups, included);
 		debug("generateGroups: %d validated groups", validated.length);
+
+		// Retry once if grouping quality is low (single catch-all group)
+		if (isLowQualityGrouping(validated, included)) {
+			debug("generateGroups: low quality result, retrying with stricter prompt");
+			const retryPrompt = buildRetryGroupingPrompt();
+			rawGroups = await callGroupingAI(client, resolvedModel, retryPrompt, userPrompt);
+			debug("generateGroups retry: parsed %d raw groups", rawGroups.length);
+			validated = validateGroups(rawGroups, included);
+			debug("generateGroups retry: %d validated groups", validated.length);
+		}
 
 		return { groups: validated, excluded };
 	} catch (error) {
@@ -233,6 +245,49 @@ export async function generateGroups(
 		const providerLabel = provider ? formatProviderName(provider) : undefined;
 		throw mapGroqError(error, providerLabel);
 	}
+}
+
+async function callGroupingAI(
+	client: ChatClient,
+	model: string,
+	systemPrompt: string,
+	userPrompt: string,
+): Promise<CommitGroup[]> {
+	const completion = (await client.chat.completions.create({
+		messages: [
+			{ role: "system", content: systemPrompt },
+			{ role: "user", content: userPrompt },
+		],
+		model,
+		temperature: 0.3,
+		max_tokens: 2048,
+	})) as { choices: { message?: { content?: string }; finish_reason?: string }[] };
+
+	const rawContent = completion.choices[0]?.message?.content;
+	const content = typeof rawContent === "string" ? rawContent.trim() : "";
+
+	debug(
+		"callGroupingAI response: choices=%d, finishReason=%s, contentLen=%d",
+		completion.choices.length,
+		completion.choices[0]?.finish_reason ?? "(none)",
+		content.length,
+	);
+	debug("callGroupingAI raw content: %s", content.slice(0, 500) || "(empty)");
+
+	if (!content) {
+		throw new Error("AI returned an empty grouping response");
+	}
+
+	return parseGroupingResponse(content);
+}
+
+/** Minimum file count where a single-group result is considered low quality */
+const MIN_FILES_FOR_QUALITY_CHECK = 5;
+
+export function isLowQualityGrouping(groups: CommitGroup[], allFiles: ChangedFile[]): boolean {
+	if (groups.length === 0) return false;
+	if (allFiles.length < MIN_FILES_FOR_QUALITY_CHECK) return false;
+	return groups.length === 1;
 }
 
 export function validateGroups(groups: CommitGroup[], allFiles: ChangedFile[]): CommitGroup[] {
