@@ -1,16 +1,24 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { debug, isDebug, setDebug } from "./debug.js";
+import { debug, isDebug, setDebug, setLogFilePath, writeSessionHeader } from "./debug.js";
 
 describe("debug utility", () => {
 	const originalStderr = console.error;
+	let tempDir: string;
 
 	beforeEach(() => {
 		console.error = vi.fn();
+		tempDir = mkdtempSync(join(tmpdir(), "cmint-test-"));
+		setLogFilePath(join(tempDir, "debug.log"));
+		writeSessionHeader();
 	});
 
 	afterEach(() => {
 		setDebug(false);
 		console.error = originalStderr;
+		rmSync(tempDir, { recursive: true, force: true });
 	});
 
 	it("does not output when debug is disabled", () => {
