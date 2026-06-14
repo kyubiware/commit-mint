@@ -29,6 +29,7 @@ import {
 	type ProviderName,
 } from "../services/provider.js";
 import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
+import { stopCheckSpinner } from "../ui/check-summary.js";
 import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
 import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js";
 import { reviewCommitMessage } from "../ui/review-message.js";
@@ -131,10 +132,7 @@ export async function runAutoGroupFlow(
 			}
 
 			if (checkResults.ok) {
-				ck.stop("All checks passed");
-				if (checkResults.results.length > 0) {
-					log.info(checkResults.results.map((r) => `  ${green("✓")} ${r.tool}`).join("\n"));
-				}
+				stopCheckSpinner(ck, checkResults);
 			}
 		}
 	}

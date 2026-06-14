@@ -4,6 +4,7 @@ import { detectConfig, runAllChecks } from "../services/checks.js";
 import { getChangedFiles, getRepoRoot, stageAll, stageFiles } from "../services/git.js";
 import { parseCheckErrors } from "../services/hooks.js";
 import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
+import { stopCheckSpinner } from "../ui/check-summary.js";
 import { showStagingMenu } from "../ui/staging-menu.js";
 import { debug } from "../utils/debug.js";
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js";
@@ -51,13 +52,9 @@ export async function handleStaging(
 				const ckSpinner = spinner();
 				ckSpinner.start("Running checks...");
 				const ckResult = await runAllChecks(repoRoot, allFiles, 60000);
-				if (ckResult.ok) {
-					ckSpinner.stop("All checks passed");
-					for (const r of ckResult.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
-				} else {
-					const failed = ckResult.results.filter((r) => !r.ok);
-					ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
-					for (const r of failed)
+				stopCheckSpinner(ckSpinner, ckResult);
+				if (!ckResult.ok) {
+					for (const r of ckResult.results.filter((r) => !r.ok))
 						log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`);
 				}
 			}
@@ -95,7 +92,6 @@ export async function handleStaging(
 }
 
 /** Run user-defined pre-commit checks from cmint config */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Check failure loop with retry support
 export async function runPreCommitChecks(
 	changedFiles: Awaited<ReturnType<typeof getChangedFiles>>,
 	noCheck?: boolean,
@@ -111,13 +107,7 @@ export async function runPreCommitChecks(
 	const ckSpinner = spinner();
 	ckSpinner.start("Running checks...");
 	let checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
-	if (checkResults.ok) {
-		ckSpinner.stop("All checks passed");
-		for (const r of checkResults.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
-	} else {
-		const failed = checkResults.results.filter((r) => !r.ok);
-		ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
-	}
+	stopCheckSpinner(ckSpinner, checkResults);
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
 	while (!checkResults.ok) {
@@ -140,13 +130,7 @@ export async function runPreCommitChecks(
 			ckSpinner.start("Running checks...");
 			checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
 			debug("Retry check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
-			if (checkResults.ok) {
-				ckSpinner.stop("All checks passed");
-				for (const r of checkResults.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
-			} else {
-				const retryFailed = checkResults.results.filter((r) => !r.ok);
-				ckSpinner.stop(`${retryFailed.length} check${retryFailed.length !== 1 ? "s" : ""} failed`);
-			}
+			stopCheckSpinner(ckSpinner, checkResults);
 			continue;
 		}
 		// "skipped" — break out of loop
