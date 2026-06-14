@@ -37,7 +37,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           cd packages/cmint
           npm pkg set version="$VERSION"
-          npm publish
+          npm publish --access public
 
       - name: Generate changelog
         id: changelog
