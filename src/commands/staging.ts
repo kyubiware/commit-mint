@@ -108,7 +108,16 @@ export async function runPreCommitChecks(
 	if (stagedFileList.length === 0) return;
 
 	debug("Running user checks on %d staged files...", stagedFileList.length);
+	const ckSpinner = spinner();
+	ckSpinner.start("Running checks...");
 	let checkResults = await runAllChecks(checkRoot, stagedFileList, 60000);
+	if (checkResults.ok) {
+		ckSpinner.stop("All checks passed");
+		for (const r of checkResults.results) if (r.stdout.trim()) log.info(dim(r.stdout.trim()));
+	} else {
+		const failed = checkResults.results.filter((r) => !r.ok);
+		ckSpinner.stop(`${failed.length} check${failed.length !== 1 ? "s" : ""} failed`);
+	}
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
 
 	while (!checkResults.ok) {
