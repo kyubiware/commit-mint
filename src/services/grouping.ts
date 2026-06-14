@@ -2,6 +2,7 @@ import { debug } from "../utils/debug.js";
 import { mapGroqError } from "./ai.js";
 import type { ChangedFile } from "./git.js";
 import { getDefaultExcludes } from "./git.js";
+import { type CommitGroup, parseGroupingResponse } from "./grouping-parser.js";
 import {
 	type ChatClient,
 	createProvider,
@@ -9,11 +10,7 @@ import {
 	type ProviderName,
 } from "./provider.js";
 
-export interface CommitGroup {
-	name: string;
-	description: string;
-	files: string[];
-}
+export type { CommitGroup } from "./grouping-parser.js";
 
 export interface GroupingResult {
 	groups: CommitGroup[];
@@ -145,49 +142,6 @@ export function buildRetryGroupingPrompt(): string {
 		"",
 		"Output ONLY valid JSON. No markdown fences, no explanation.",
 	].join("\n");
-}
-
-export function parseGroupingResponse(content: string): CommitGroup[] {
-	// Strip think tags from reasoning models
-	let cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").trim();
-	// Strip markdown code fences
-	cleaned = cleaned
-		.replace(/^```(?:json)?\s*/i, "")
-		.replace(/\s*```$/i, "")
-		.trim();
-
-	// Extract the outermost JSON array — handles text before/after the array
-	const start = cleaned.indexOf("[");
-	const end = cleaned.lastIndexOf("]");
-	if (start === -1 || end === -1 || end <= start) {
-		throw new Error("AI response did not contain a JSON array");
-	}
-	const jsonText = cleaned.slice(start, end + 1);
-	const parsed = JSON.parse(jsonText) as unknown;
-
-	if (!Array.isArray(parsed)) {
-		throw new Error("AI response was not a JSON array");
-	}
-
-	const rawGroups: CommitGroup[] = [];
-	for (const item of parsed) {
-		if (
-			typeof item === "object" &&
-			item !== null &&
-			"name" in item &&
-			"description" in item &&
-			"files" in item &&
-			Array.isArray(item.files)
-		) {
-			rawGroups.push({
-				name: String(item.name),
-				description: String(item.description),
-				files: item.files.filter((f: unknown) => typeof f === "string") as string[],
-			});
-		}
-	}
-
-	return rawGroups;
 }
 
 export async function generateGroups(

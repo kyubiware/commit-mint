@@ -5,9 +5,9 @@ import {
 	filterExcludedFiles,
 	generateGroups,
 	isLowQualityGrouping,
-	parseGroupingResponse,
 	validateGroups,
 } from "./grouping.js";
+import { parseGroupingResponse } from "./grouping-parser.js";
 
 const mockCreateProvider = vi.hoisted(() => vi.fn());
 
@@ -297,6 +297,55 @@ describe("parseGroupingResponse", () => {
 		const result = parseGroupingResponse(content);
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe("Backend");
+	});
+
+	it("recovers a single JSON object instead of an array", () => {
+		// Model ignored "JSON array" instruction and emitted one bare object.
+		const content = JSON.stringify({
+			name: "Backend",
+			description: "API changes",
+			files: ["src/api.ts"],
+		});
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("Backend");
+		expect(result[0].files).toEqual(["src/api.ts"]);
+	});
+
+	it("recovers multiple concatenated JSON objects (no array wrapper)", () => {
+		// Model emitted two objects back-to-back. This is the exact failure mode
+		// from the field: "Unexpected non-whitespace character after JSON".
+		const g1 = JSON.stringify({
+			name: "Backend",
+			description: "API changes",
+			files: ["src/api.ts"],
+		});
+		const g2 = JSON.stringify({
+			name: "Tests",
+			description: "Test updates",
+			files: ["src/api.test.ts"],
+		});
+		const content = `${g1}${g2}`;
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(2);
+		expect(result[0].name).toBe("Backend");
+		expect(result[1].name).toBe("Tests");
+	});
+
+	it("recovers newline-separated JSON objects", () => {
+		const g1 = JSON.stringify({
+			name: "Backend",
+			description: "API changes",
+			files: ["src/api.ts"],
+		});
+		const g2 = JSON.stringify({
+			name: "Tests",
+			description: "Test updates",
+			files: ["src/api.test.ts"],
+		});
+		const content = `${g1}\n${g2}`;
+		const result = parseGroupingResponse(content);
+		expect(result).toHaveLength(2);
 	});
 
 	it("throws when no JSON array found", () => {
