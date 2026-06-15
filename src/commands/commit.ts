@@ -16,6 +16,7 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js"
+import { checkForUpdatesUpfront } from "../services/update-check.js"
 import { reviewCommitMessage } from "../ui/review-message.js"
 import { saveCachedCommit } from "../utils/cache.js"
 import { debug } from "../utils/debug.js"
@@ -32,7 +33,7 @@ import { handleStaging, runPreCommitChecks } from "./staging.js"
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Sequential CLI lifecycle orchestrator
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-branch state machine (retry/normal, staging, review, recovery)
-export async function commitCommand(flags: CommitFlags) {
+export async function commitCommand(flags: CommitFlags, version: string) {
 	debug("commitCommand called", { flags })
 	await assertGitRepo()
 
@@ -40,6 +41,9 @@ export async function commitCommand(flags: CommitFlags) {
 	if (flags.retry) {
 		return handleRetry()
 	}
+
+	// ── Update check (upfront, silent on cache hit) ─────────────────
+	await checkForUpdatesUpfront(version)
 
 	// ── Preflight: nudge the user to set up .cmintrc if it's missing ─
 	const repoRoot = await getRepoRoot()
