@@ -22,6 +22,7 @@ vi.mock("@clack/prompts", () => ({
 }))
 
 const warnSpy = vi.mocked(log.warn)
+const infoSpy = vi.mocked(log.info)
 
 const ENV_KEYS = ["NO_UPDATE_NOTIFIER", "CI", "NODE_ENV"] as const
 const savedEnv: Record<string, string | undefined> = {}
@@ -52,6 +53,7 @@ beforeEach(() => {
 	tempDir = mkdtempSync(join(tmpdir(), "cmint-update-"))
 	setCachePath(join(tempDir, "update-check.json"))
 	warnSpy.mockClear()
+	infoSpy.mockClear()
 	listeners = []
 	trackListener(process, "beforeExit")
 })
@@ -186,7 +188,9 @@ describe("cache behavior", () => {
 		setFetchImpl(makeFetchOk("1.0.0"))
 		chmodSync(tempDir, 0o444)
 		try {
-			await expect(runUpdateCheck("0.6.6")).resolves.toBeUndefined()
+			// Returns fetch-update even when saveCache fails (EACCES) — the
+			// nag is still shown; only persistence is skipped.
+			await expect(runUpdateCheck("0.6.6")).resolves.toBe("fetch-update")
 		} finally {
 			chmodSync(tempDir, 0o755)
 		}
@@ -371,5 +375,35 @@ describe("checkForUpdatesUpfront", () => {
 		await checkForUpdatesUpfront("0.6.6")
 		expect(warnSpy).toHaveBeenCalledTimes(1)
 		expect(cacheExists()).toBe(true)
+	})
+
+	it("non-TTY stdin + fetch succeeds + up-to-date → shows 'You are on the latest version'", async () => {
+		setIsTTY(true, false)
+		setFetchImpl(makeFetchOk("0.6.6"))
+		await checkForUpdatesUpfront("0.6.6")
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).toHaveBeenCalledTimes(1)
+		expect(String(infoSpy.mock.calls[0][0])).toMatch(/latest version/i)
+	})
+
+	it("cache fresh + up-to-date → does NOT show 'You are on the latest version' (silent on cache hit)", async () => {
+		setIsTTY(true, false)
+		writeCache("0.6.6", Date.now())
+		setFetchImpl(makeFetchOk("0.6.6"))
+		await checkForUpdatesUpfront("0.6.6")
+		// Cache-hit-current path must be fully silent — the "latest version"
+		// message is reserved for actual fetches.
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).not.toHaveBeenCalled()
+	})
+
+	it("non-TTY stdin + fetch fails → no 'latest version' message, no nag", async () => {
+		setIsTTY(true, false)
+		setFetchImpl((async () => {
+			throw new Error("ENETUNREACH")
+		}) as unknown as typeof fetch)
+		await checkForUpdatesUpfront("0.6.6")
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).not.toHaveBeenCalled()
 	})
 })

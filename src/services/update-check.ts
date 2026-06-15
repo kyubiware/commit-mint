@@ -149,20 +149,38 @@ function displayNag(current: string, latest: string): void {
 }
 
 /**
+ * Outcome of an update check. Callers use this to decide which (if any)
+ * non-nag message to show — e.g. "You are on the latest version" is only
+ * appropriate after a real fetch, not on a cache hit.
+ */
+export type UpdateCheckStatus =
+	| "skipped"
+	| "cache-update"
+	| "cache-current"
+	| "fetch-update"
+	| "fetch-current"
+	| "fetch-failed-or-aborted"
+	| "error"
+
+/**
  * Run the full update check. Exported for tests; the public surface is
  * {@link checkForUpdatesUpfront}. Accepts an optional AbortSignal that
  * propagates to the underlying fetch — used by the cancellable spinner.
+ *
+ * Returns an {@link UpdateCheckStatus} so the caller can distinguish a
+ * real fetch that found the user current (eligible for "You are on the
+ * latest version" feedback) from a silent cache hit.
  */
 export async function runUpdateCheck(
 	currentVersion: string,
 	parentSignal?: AbortSignal,
-): Promise<void> {
+): Promise<UpdateCheckStatus> {
 	debug("runUpdateCheck: currentVersion=%s", currentVersion)
 	if (shouldSkip(currentVersion)) {
 		debug(
 			"runUpdateCheck: skipped (NO_UPDATE_NOTIFIER / CI / NODE_ENV=test / non-TTY / invalid version)",
 		)
-		return
+		return "skipped"
 	}
 	try {
 		const cached = await loadCache()
@@ -170,10 +188,10 @@ export async function runUpdateCheck(
 			debug("runUpdateCheck: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
 			if (semver.gt(cached.latest, currentVersion)) {
 				displayNag(currentVersion, cached.latest)
-			} else {
-				debug("runUpdateCheck: current >= latest, no nag")
+				return "cache-update"
 			}
-			return
+			debug("runUpdateCheck: current >= latest, no nag")
+			return "cache-current"
 		}
 		if (cached) {
 			debug("runUpdateCheck: cache stale, refetching")
@@ -183,27 +201,31 @@ export async function runUpdateCheck(
 		const latest = await fetchLatest(parentSignal)
 		if (latest === null) {
 			debug("runUpdateCheck: fetch returned null, not saving cache")
-			return
+			return "fetch-failed-or-aborted"
 		}
 		await saveCache({ latest, checkedAt: Date.now() })
 		if (semver.gt(latest, currentVersion)) {
 			displayNag(currentVersion, latest)
-		} else {
-			debug("runUpdateCheck: current >= latest, no nag")
+			return "fetch-update"
 		}
+		debug("runUpdateCheck: current >= latest, no nag")
+		return "fetch-current"
 	} catch (err) {
 		// Silently swallow: update check must never surface errors to the user.
 		debug("runUpdateCheck: unexpected error — %s", err instanceof Error ? err.message : String(err))
+		return "error"
 	}
-	debug("runUpdateCheck: complete")
 }
 
 /**
  * Run the update check at startup. Silent when:
  *   - skip conditions match (CI, NO_UPDATE_NOTIFIER, NODE_ENV=test, non-TTY
  *     stderr, invalid version)
- *   - cache is fresh (< 24h old) — only displays nag if update available
- *   - stdin is non-interactive (piped) — runs silently without spinner
+ *   - cache is fresh (< 24h old) — only displays nag if update available.
+ *     A cache-hit-current result produces NO output (no "latest version"
+ *     message), because no actual check was performed.
+ *   - stdin is non-interactive (piped) — runs silently without spinner, but
+ *     still shows "You are on the latest version" after a successful fetch
  *
  * On a stale/missing cache with interactive stdin, shows a spinner that the
  * user can dismiss by pressing any key. Ctrl+C restores the terminal and
@@ -218,7 +240,8 @@ export async function checkForUpdatesUpfront(currentVersion: string): Promise<vo
 		return
 	}
 
-	// Fast path: fresh cache, no network needed.
+	// Fast path: fresh cache, no network needed. Silent on cache hit — the
+	// "You are on the latest version" message is reserved for actual fetches.
 	const cached = await loadCache()
 	if (cached && Date.now() - cached.checkedAt < TTL_MS) {
 		debug("checkForUpdatesUpfront: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
@@ -240,11 +263,23 @@ export async function checkForUpdatesUpfront(currentVersion: string): Promise<vo
 	const stdin = process.stdin
 	if (stdin.isTTY !== true || typeof stdin.setRawMode !== "function") {
 		debug("checkForUpdatesUpfront: stdin not interactive, running silent check")
-		await runUpdateCheck(currentVersion)
+		const status = await runUpdateCheck(currentVersion)
+		reportFetchCurrent(status)
 		return
 	}
 
 	await runCheckWithSpinner(currentVersion)
+}
+
+/**
+ * Surface "You are on the latest version" feedback only when the check
+ * actually performed a fetch and the user is current. Silent on cache hits,
+ * skips, failures, and aborts.
+ */
+function reportFetchCurrent(status: UpdateCheckStatus): void {
+	if (status === "fetch-current") {
+		log.info(green("You are on the latest version"))
+	}
 }
 
 /**
@@ -326,19 +361,28 @@ async function runCheckWithSpinner(currentVersion: string): Promise<void> {
 
 	if (handler.failed) {
 		s.stop("")
-		await runUpdateCheck(currentVersion)
+		const status = await runUpdateCheck(currentVersion)
+		reportFetchCurrent(status)
 		return
 	}
 
+	let status: UpdateCheckStatus
 	try {
-		await runUpdateCheck(currentVersion, controller.signal)
+		status = await runUpdateCheck(currentVersion, controller.signal)
 	} finally {
 		handler.cleanup()
-		if (controller.signal.aborted) {
-			debug("runCheckWithSpinner: spinner dismissed by user")
-			s.stop("Skipped")
-		} else {
-			s.stop("Update check complete")
-		}
+	}
+
+	if (controller.signal.aborted) {
+		debug("runCheckWithSpinner: spinner dismissed by user")
+		s.stop("Skipped")
+	} else if (status === "fetch-current") {
+		s.stop(green("You are on the latest version"))
+	} else if (status === "fetch-update") {
+		s.stop("") // nag already shown via log.warn inside runUpdateCheck
+	} else if (status === "fetch-failed-or-aborted") {
+		s.stop("Update check failed")
+	} else {
+		s.stop("")
 	}
 }
