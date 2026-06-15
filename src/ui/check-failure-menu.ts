@@ -6,11 +6,14 @@ import { debug } from "../utils/debug.js"
 
 const MAX_TSC_DIAGNOSTICS = 3
 const MAX_ESLINT_DIAGNOSTICS = 3
+const MAX_TEST_FAILURES = 3
 const MAX_SUMMARY_LINE_LENGTH = 120
 const TSC_DIAGNOSTIC =
 	/^(.+?\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs))\((\d+),(\d+)\):\s+error\s+(TS\d+):\s+(.+)$/
 // ESLint stylish format: <whitespace><line>:<col>  <severity>  <message>  <rule>
 const ESLINT_ERROR_LINE = /^\s*(\d+):(\d+)\s+(error|warning)\s+(.+)\s{2,}(\S+)\s*$/
+// vitest/jest "Failed Tests" block: optional indent, FAIL, file path, ">", test path
+const TEST_FILE_FAIL = /^\s*FAIL\s+(.+?\.(?:test|spec)\.[^\s>]+)\s*>\s*(.+)$/
 
 interface TscDiagnostic {
 	file: string
@@ -27,6 +30,11 @@ interface EslintDiagnostic {
 	severity: string
 	message: string
 	rule: string
+}
+
+interface TestFailure {
+	file: string
+	name: string
 }
 
 function formatCheckFailureSummary(errors: HookError[]): string {
@@ -49,6 +57,13 @@ function formatCheckErrorSummary(error: HookError): string {
 		const diagnostics = extractEslintDiagnostics(error.raw || error.message)
 		if (diagnostics.length > 0) {
 			return formatEslintSummary(diagnostics)
+		}
+	}
+
+	if (error.tool === "vitest" || error.tool === "jest") {
+		const failures = extractTestFailures(error.raw || error.message)
+		if (failures.length > 0) {
+			return formatTestFailureSummary(failures, error.tool)
 		}
 	}
 
@@ -122,6 +137,60 @@ function extractEslintDiagnostics(raw: string): EslintDiagnostic[] {
 	}
 
 	return diagnostics
+}
+
+function extractTestFailures(raw: string): TestFailure[] {
+	const failures: TestFailure[] = []
+	const seen = new Set<string>()
+	for (const line of raw.split("\n")) {
+		const match = TEST_FILE_FAIL.exec(line)
+		if (!match) continue
+		const file = (match[1] ?? "").trim()
+		const name = (match[2] ?? "").trim()
+		if (!file || !name) continue
+		const key = `${file}\u0000${name}`
+		// Dedupe — vitest can repeat the same FAIL line across reruns captured in one block
+		if (seen.has(key)) continue
+		seen.add(key)
+		failures.push({ file, name })
+	}
+	return failures
+}
+
+function formatTestFailureSummary(failures: TestFailure[], tool: string): string {
+	const total = failures.length
+	const visible = failures.slice(0, MAX_TEST_FAILURES)
+	const hidden = total - visible.length
+	const fileCount = new Set(failures.map((f) => f.file)).size
+	const testNoun = total === 1 ? "test" : "tests"
+	const fileNoun = fileCount === 1 ? "file" : "files"
+
+	const lines = [`  ${red("•")} [${tool}] ${total} failed ${testNoun} in ${fileCount} ${fileNoun}`]
+
+	// Group visible failures by file to avoid repeating the file path
+	const byFile = new Map<string, string[]>()
+	for (const failure of visible) {
+		const names = byFile.get(failure.file) ?? []
+		names.push(failure.name)
+		byFile.set(failure.file, names)
+	}
+
+	for (const [file, names] of byFile) {
+		lines.push(`    ${truncate(file, MAX_SUMMARY_LINE_LENGTH)}`)
+		for (const name of names) {
+			lines.push(`      ${red("×")} ${truncate(name, MAX_SUMMARY_LINE_LENGTH)}`)
+		}
+	}
+
+	if (hidden > 0) {
+		lines.push(
+			dim(
+				`    +${hidden} more failed ${hidden === 1 ? "test" : "tests"}. View full output for details.`,
+			),
+		)
+	}
+
+	return lines.join("\n")
 }
 
 function formatEslintSummary(diagnostics: EslintDiagnostic[]): string {

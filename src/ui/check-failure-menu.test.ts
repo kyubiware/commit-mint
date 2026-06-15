@@ -133,6 +133,87 @@ describe("showCheckFailureMenu", () => {
 		expect(summary).not.toContain("ESLint")
 	})
 
+	it("summarizes a single vitest failure with file + test name and no '+more' suffix", async () => {
+		const raw = [
+			" RUN  v3.2.4 /repo",
+			"",
+			" ❯ sample.test.ts (2 tests | 1 failed) 5ms",
+			"   × describe > fails  5ms",
+			"     → expected 1 to be 2",
+			"",
+			"⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯",
+			"",
+			" FAIL  sample.test.ts > describe > fails",
+			"AssertionError: expected 1 to be 2",
+			"",
+			" Test Files  1 failed (1)",
+			"      Tests  1 failed (2)",
+		].join("\n")
+		const errors = [{ tool: "vitest", message: raw, raw }]
+		vi.mocked(select).mockResolvedValueOnce("retry")
+
+		await showCheckFailureMenu(errors, raw, async () => true)
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string
+		expect(summary).toContain("[vitest] 1 failed test in 1 file")
+		expect(summary).toContain("sample.test.ts")
+		expect(summary).toContain("× describe > fails")
+		expect(summary).not.toContain("+")
+		expect(summary).not.toContain("more failed")
+	})
+
+	it("summarizes multiple vitest failures grouped by file with '+N more' suffix", async () => {
+		const raw = [
+			"⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯",
+			"",
+			" FAIL  a.test.ts > describe > first",
+			"AssertionError: boom one",
+			"",
+			" FAIL  a.test.ts > describe > second",
+			"AssertionError: boom two",
+			"",
+			" FAIL  b.test.ts > other > third",
+			"Error: boom three",
+			"",
+			" FAIL  b.test.ts > other > fourth",
+			"Error: boom four",
+			"",
+			" FAIL  b.test.ts > other > fifth",
+			"Error: boom five",
+			"",
+		].join("\n")
+		const errors = [{ tool: "vitest", message: raw, raw }]
+		vi.mocked(select).mockResolvedValueOnce("retry")
+
+		await showCheckFailureMenu(errors, raw, async () => true)
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string
+		expect(summary).toContain("[vitest] 5 failed tests in 2 files")
+		// First 3 visible (grouped under their files)
+		expect(summary).toContain("a.test.ts")
+		expect(summary).toContain("× describe > first")
+		expect(summary).toContain("× describe > second")
+		expect(summary).toContain("b.test.ts")
+		expect(summary).toContain("× other > third")
+		// Hidden tests
+		expect(summary).toContain("+2 more failed tests. View full output for details.")
+		// Hidden test names not shown
+		expect(summary).not.toContain("fourth")
+		expect(summary).not.toContain("fifth")
+	})
+
+	it("falls back to default formatting when vitest output has no FAIL > test name lines", async () => {
+		const raw = "Some unstructured vitest output without a Failed Tests block"
+		const errors = [{ tool: "vitest", message: raw, raw }]
+		vi.mocked(select).mockResolvedValueOnce("retry")
+
+		await showCheckFailureMenu(errors, raw, async () => true)
+
+		const summary = vi.mocked(note).mock.calls[0]?.[0] as string
+		expect(summary).toContain("[vitest] Some unstructured vitest output")
+		expect(summary).not.toContain("failed tests in")
+	})
+
 	it("handles empty errors array gracefully", async () => {
 		vi.mocked(select).mockResolvedValueOnce("retry")
 
