@@ -8,6 +8,7 @@ import { agentCommand } from "./commands/agent.js"
 import { commitCommand } from "./commands/commit.js"
 import { configCommand } from "./commands/config.js"
 import { logsCommand } from "./commands/logs.js"
+import { updateCommand } from "./commands/update.js"
 import { setAgentMode } from "./utils/agent.js"
 import { setDebug, writeSessionHeader } from "./utils/debug.js"
 
@@ -78,6 +79,23 @@ cli(
 			command({ name: "config" }, async () => {
 				await configCommand()
 			}),
+			command(
+				{
+					name: "update",
+					description: "Update cmint to the latest published version",
+					flags: {
+						yes: {
+							type: Boolean,
+							description: "Skip confirmation prompt",
+							alias: "y",
+							default: false,
+						},
+					},
+				},
+				async (argv) => {
+					await updateCommand(version, argv.flags)
+				},
+			),
 		],
 	},
 	(argv) => {

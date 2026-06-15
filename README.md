@@ -31,9 +31,22 @@ API key. The key is saved to `~/.commit-mint` (INI).
 cmint             # interactive: stage → checks → review → commit
 cmint -a          # auto-group, generate messages, commit everything
 cmint config      # edit provider, model, locale, etc.
+cmint update      # update cmint to the latest published version
 ```
 
 See [all flags](#all-flags) for the full list.
+
+## Self-update (`cmint update`)
+
+`cmint update` checks the npm registry for a newer version and, if one exists,
+runs the appropriate global install command for your package manager (detected
+from `npm_config_user_agent` — npm, pnpm, yarn, or bun; falls back to npm).
+
+- If you're already on the latest version, it exits silently.
+- Otherwise it prints `current → latest` and asks for confirmation before
+  running the install (live npm output is streamed to your terminal).
+- `cmint update -y` (or `--yes`) skips the confirmation prompt — useful in
+  scripts.
 
 ## Pre-flight checks (`.cmintrc`)
 
