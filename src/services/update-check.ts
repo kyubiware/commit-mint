@@ -6,7 +6,12 @@ import { cyan, green, yellow } from "kolorist"
 import semver from "semver"
 import { debug } from "../utils/debug.js"
 
-const REGISTRY_URL = "https://registry.npmjs.org/@kyubiware/commit-mint/latest"
+// Dist-tags endpoint returns `{"latest":"X.Y.Z","next":"...", ...}` — the only
+// npm registry URL whose body actually contains a `latest` field. The
+// `/<package>/latest` endpoint returns the full package manifest (which has
+// `version`, not `latest`), so it can't be used here without changing the
+// parser. The `/-/package/` prefix works for both scoped and unscoped names.
+const REGISTRY_URL = "https://registry.npmjs.org/-/package/@kyubiware/commit-mint/dist-tags"
 const PACKAGE_NAME = "@kyubiware/commit-mint"
 const TTL_MS = 24 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 5000
