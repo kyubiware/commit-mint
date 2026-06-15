@@ -495,4 +495,50 @@ describe("commitCommand check integration", () => {
 		expect(generateCommitMessage).toHaveBeenCalled();
 		expect(attemptCommit).toHaveBeenCalled();
 	});
+
+	it("re-stages files modified by formatters (prettier --write, eslint --fix) after checks pass", async () => {
+		// Two changed files → staging menu → "stage all" uses stageAll (not stageFiles),
+		// so any stageFiles call must come from the post-check re-stage logic.
+		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts\nM  src/bar.ts");
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts", "src/bar.ts"],
+			all: true,
+		});
+		vi.mocked(stageAll).mockResolvedValue(undefined);
+		vi.mocked(stageFiles).mockResolvedValue(undefined);
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo");
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key");
+		vi.mocked(readConfig).mockResolvedValue({ model: "openai/gpt-oss-20b", locale: "en" });
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test");
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true });
+		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456");
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["src/foo.ts", "src/bar.ts"],
+			diff: "some diff",
+		});
+		// Simulate: formatter modifies src/foo.ts on disk during checks →
+		// status transitions from "M " (staged only) to "MM" (staged + working-tree modified).
+		vi.mocked(getChangedFiles)
+			// call 1 — initial scan (commit.ts:59): both files unstaged
+			.mockResolvedValueOnce([
+				{ status: "M", path: "src/foo.ts", staged: false },
+				{ status: "M", path: "src/bar.ts", staged: false },
+			])
+			// call 2 — after stageAll refresh (commit.ts:92): both staged, clean
+			.mockResolvedValueOnce([
+				{ status: "M", path: "src/foo.ts", staged: true },
+				{ status: "M", path: "src/bar.ts", staged: true },
+			])
+			// call 3 — after checks pass (NEW: inside runPreCommitChecks):
+			// foo.ts has working-tree modifications from the formatter ("MM")
+			.mockResolvedValueOnce([
+				{ status: "MM", path: "src/foo.ts", staged: true },
+				{ status: "M", path: "src/bar.ts", staged: true },
+			]);
+
+		await commitCommand({ retry: false, auto: false, agent: false });
+
+		// Only the formatter-modified file is re-staged; bar.ts is untouched
+		expect(stageFiles).toHaveBeenCalledWith(["src/foo.ts"]);
+	});
 });
