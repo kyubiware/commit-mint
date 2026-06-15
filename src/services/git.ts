@@ -101,13 +101,29 @@ export async function stageAll() {
 }
 
 export async function resetStaging() {
-	debug("resetStaging: git reset HEAD");
-	await execa("git", ["reset", "HEAD"]);
+	// On a repo with no commits, `git reset HEAD` fails because HEAD doesn't
+	// resolve yet (exit 128, "ambiguous argument 'HEAD'"). Fall back to clearing
+	// the index without referencing HEAD so the first commit can proceed.
+	try {
+		debug("resetStaging: git reset HEAD");
+		await execa("git", ["reset", "HEAD"]);
+	} catch {
+		debug("resetStaging: HEAD missing, falling back to git rm --cached");
+		await execa("git", ["rm", "-r", "--cached", "--quiet", "."]);
+	}
 }
 
-export async function getHead() {
-	const { stdout } = await execa("git", ["rev-parse", "HEAD"]);
-	return stdout.trim();
+export async function getHead(): Promise<string | null> {
+	// Returns null on a repo with no commits — `git rev-parse HEAD` exits 128
+	// on a fresh repo. Callers treat "headBefore === headAfter === null" as
+	// "commit failed" and "null → SHA" as "first commit succeeded."
+	try {
+		const { stdout } = await execa("git", ["rev-parse", "HEAD"]);
+		return stdout.trim();
+	} catch {
+		debug("getHead: HEAD does not exist (fresh repo)");
+		return null;
+	}
 }
 
 export async function getStatusShort() {

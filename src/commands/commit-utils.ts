@@ -27,7 +27,7 @@ export function makeRecoveryCallbacks(message: string) {
 export async function commitWithRecovery(
 	message: string,
 	s: ReturnType<typeof spinner>,
-	headBefore: string,
+	headBefore: string | null,
 ): Promise<"committed" | "cancelled"> {
 	const result = await attemptCommit(message, [], createProgressHandler(s));
 	const headAfter = await getHead();

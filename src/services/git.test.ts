@@ -4,7 +4,9 @@ import {
 	attemptCommit,
 	attemptCommitNoVerify,
 	getChangedFiles,
+	getHead,
 	getStagedDiff,
+	resetStaging,
 	stageFiles,
 } from "./git.js";
 
@@ -310,5 +312,56 @@ describe("stageFiles", () => {
 		mockExeca.mockResolvedValue({ stdout: "" });
 		await stageFiles(["src/foo.ts"]);
 		expect(mockExeca).toHaveBeenCalledWith("git", ["add", "src/foo.ts"]);
+	});
+});
+
+describe("resetStaging", () => {
+	it("unstages files via git reset HEAD on a normal repo", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" });
+
+		await resetStaging();
+
+		expect(mockExeca).toHaveBeenCalledWith("git", ["reset", "HEAD"]);
+	});
+
+	it("does not throw when HEAD does not exist (fresh repo with no commits)", async () => {
+		// Repro: `git reset HEAD` exits non-zero on a repo that has no commits yet,
+		// because HEAD doesn't resolve. cmint must support making the first commit.
+		const headError = new Error("fatal: ambiguous argument 'HEAD': unknown revision");
+		mockExeca.mockRejectedValueOnce(headError).mockResolvedValue({ stdout: "" });
+
+		await expect(resetStaging()).resolves.not.toThrow();
+	});
+
+	it("falls back to git rm --cached when HEAD does not exist", async () => {
+		// Verify the implementation actually clears the index without referencing HEAD,
+		// not just that it swallows the error. `git rm -r --cached --quiet .` removes
+		// every path from the index while keeping the working tree intact.
+		const headError = new Error("fatal: ambiguous argument 'HEAD'");
+		mockExeca.mockRejectedValueOnce(headError).mockResolvedValue({ stdout: "" });
+
+		await resetStaging();
+
+		expect(mockExeca).toHaveBeenCalledWith("git", ["rm", "-r", "--cached", "--quiet", "."]);
+	});
+});
+
+describe("getHead", () => {
+	it("returns HEAD sha on a repo with commits", async () => {
+		mockExeca.mockResolvedValue({ stdout: "abc123def456\n" });
+
+		const result = await getHead();
+
+		expect(result).toBe("abc123def456");
+	});
+
+	it("returns null when HEAD does not exist (fresh repo with no commits)", async () => {
+		// Repro: `git rev-parse HEAD` exits non-zero on a repo with zero commits.
+		// Callers treat "no prior HEAD" + "commit succeeded" as "first commit succeeded."
+		mockExeca.mockRejectedValueOnce(new Error("fatal: ambiguous argument 'HEAD'"));
+
+		const result = await getHead();
+
+		expect(result).toBeNull();
 	});
 });
