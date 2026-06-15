@@ -42,15 +42,15 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 		return handleRetry()
 	}
 
-	// ── Update check (upfront, silent on cache hit) ─────────────────
-	await checkForUpdatesUpfront(version)
-
 	// ── Preflight: nudge the user to set up .cmintrc if it's missing ─
 	const repoRoot = await getRepoRoot()
 	await runPreflightSetupPrompt(repoRoot)
 
 	// ── Normal mode ─────────────────────────────────────────────────
 	intro("🌿 commit-mint")
+
+	// ── Update check (after header, silent on cache hit) ────────────
+	await checkForUpdatesUpfront(version)
 
 	const status = await getStatusShort()
 	debug("Git status:", status || "(empty)")
