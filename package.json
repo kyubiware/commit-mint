@@ -50,11 +50,13 @@
 		"ini": "^5.0.0",
 		"jiti": "^2.7.0",
 		"kolorist": "^1.8.0",
-		"picomatch": "^4.0.4"
+		"picomatch": "^4.0.4",
+		"semver": "^7.7.2"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
 		"@types/ini": "^4.1.1",
+		"@types/semver": "^7.7.1",
 		"@vitest/coverage-v8": "^3.2.4",
 		"tsdown": "^0.22.0",
 		"tsx": "^4.22.2",
