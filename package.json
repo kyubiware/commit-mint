@@ -1,6 +1,6 @@
 {
 	"name": "@kyubiware/commit-mint",
-	"version": "0.6.6",
+	"version": "0.7.0",
 	"description": "🌿 AI-powered git commit tool — auto-group changed files, generate messages, run pre-commit checks",
 	"type": "module",
 	"bin": {
