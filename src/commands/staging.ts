@@ -136,4 +136,27 @@ export async function runPreCommitChecks(
 		// "skipped" — break out of loop
 		break;
 	}
+
+	// Formatters (prettier --write, eslint --fix, etc.) modify files on disk during checks.
+	// Re-stage those modifications so getStagedDiff() captures the formatted content —
+	// otherwise the commit lands with pre-format content and the changes dangle in the WT.
+	await restageFormatterModifications(stagedFileList);
+}
+
+/**
+ * Re-stage staged files whose working-tree content diverged from the index after checks ran.
+ * Signal: a file with both index and working-tree modifications has git status "MM".
+ */
+async function restageFormatterModifications(stagedFileList: string[]): Promise<void> {
+	const checkedSet = new Set(stagedFileList);
+	const postCheckFiles = await getChangedFiles();
+	const modifiedByChecks = postCheckFiles
+		.filter((f) => checkedSet.has(f.path) && f.staged && f.status === "MM")
+		.map((f) => f.path);
+	if (modifiedByChecks.length === 0) return;
+	debug("Re-staging %d file(s) modified by checks", modifiedByChecks.length);
+	await stageFiles(modifiedByChecks);
+	log.info(
+		`Re-staged ${modifiedByChecks.length} file${modifiedByChecks.length !== 1 ? "s" : ""} modified by checks`,
+	);
 }
