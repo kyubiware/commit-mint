@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { log } from "@clack/prompts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
-	checkForUpdates,
+	checkForUpdatesUpfront,
 	runUpdateCheck,
 	setCachePath,
 	setFetchImpl,
@@ -318,65 +318,58 @@ describe("nag display", () => {
 		await runUpdateCheck("0.6.6")
 		expect(warnSpy).not.toHaveBeenCalled()
 	})
+})
 
-	it("checkForUpdates registers a beforeExit listener", () => {
-		const before = process.listenerCount("beforeExit")
-		checkForUpdates("1.0.0")
-		const after = process.listenerCount("beforeExit")
-		expect(after).toBe(before + 1)
+describe("checkForUpdatesUpfront", () => {
+	function setIsTTY(stderr: boolean, stdin: boolean): void {
+		Object.defineProperty(process.stderr, "isTTY", { value: stderr, configurable: true })
+		Object.defineProperty(process.stdin, "isTTY", { value: stdin, configurable: true })
+	}
+
+	it("skips silently when shouldSkip returns true (non-TTY stderr)", async () => {
+		setIsTTY(false, false)
+		const fetchSpy = vi.fn()
+		setFetchImpl(fetchSpy)
+		await checkForUpdatesUpfront("0.6.6")
+		expect(fetchSpy).not.toHaveBeenCalled()
+		expect(warnSpy).not.toHaveBeenCalled()
 	})
 
-	it("checkForUpdates removes its listener after firing (no infinite re-fire)", async () => {
-		// Mock fetch + process.exit so the listener's async tail can't escape
-		// the test and call real process.exit after the test ends.
-		const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never)
+	it("cache fresh + update available → shows nag, no fetch, no spinner", async () => {
+		setIsTTY(true, true)
+		writeCache("1.0.0", Date.now())
+		const fetchSpy = vi.fn()
+		setFetchImpl(fetchSpy)
+		await checkForUpdatesUpfront("0.6.6")
+		expect(fetchSpy).not.toHaveBeenCalled()
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("cache fresh + up-to-date → silent (no nag, no fetch)", async () => {
+		setIsTTY(true, true)
+		writeCache("0.6.6", Date.now())
+		const fetchSpy = vi.fn()
+		setFetchImpl(fetchSpy)
+		await checkForUpdatesUpfront("0.6.6")
+		expect(fetchSpy).not.toHaveBeenCalled()
+		expect(warnSpy).not.toHaveBeenCalled()
+	})
+
+	it("cache stale + non-TTY stdin → falls back to silent check (no spinner)", async () => {
+		setIsTTY(true, false) // stderr is TTY (passes shouldSkip) but stdin is not
+		writeCache("0.6.6", Date.now() - 25 * 60 * 60 * 1000)
 		setFetchImpl(makeFetchOk("1.0.0"))
-		try {
-			const before = process.listenerCount("beforeExit")
-			checkForUpdates("1.0.0")
-			expect(process.listenerCount("beforeExit")).toBe(before + 1)
-			process.emit("beforeExit")
-			// `process.once` must remove the listener so beforeExit can't loop
-			// back into another runUpdateCheck when the fetch schedules new I/O.
-			expect(process.listenerCount("beforeExit")).toBe(before)
-			// Drain the async tail so no `process.exit` slips out after the test.
-			await new Promise((r) => setImmediate(r))
-			await new Promise((r) => setImmediate(r))
-		} finally {
-			exitSpy.mockRestore()
-		}
+		// spinner() from @clack/prompts is mocked at the top level; assert the
+		// silent path by checking that the fetch still runs and the nag shows.
+		await checkForUpdatesUpfront("0.6.6")
+		expect(warnSpy).toHaveBeenCalledTimes(1)
 	})
 
-	it("checkForUpdates forces exit after the check resolves (preserves exitCode)", async () => {
-		const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never)
-		try {
-			setFetchImpl(makeFetchOk("1.0.0"))
-			checkForUpdates("0.6.6")
-			process.emit("beforeExit")
-			// Let the fetch promise + .finally microtask run.
-			await new Promise((r) => setImmediate(r))
-			await new Promise((r) => setImmediate(r))
-			expect(exitSpy).toHaveBeenCalledWith(0)
-		} finally {
-			exitSpy.mockRestore()
-		}
-	})
-
-	it("checkForUpdates forces exit even when the registry fetch fails", async () => {
-		const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never)
-		try {
-			setFetchImpl((async () => {
-				throw new Error("ENETUNREACH")
-			}) as unknown as typeof fetch)
-			checkForUpdates("0.6.6")
-			process.emit("beforeExit")
-			await new Promise((r) => setImmediate(r))
-			await new Promise((r) => setImmediate(r))
-			// Regression: previously, fetch failure left no cache, so
-			// beforeExit re-fired the listener forever and the CLI hung.
-			expect(exitSpy).toHaveBeenCalledWith(0)
-		} finally {
-			exitSpy.mockRestore()
-		}
+	it("cache missing + non-TTY stdin → falls back to silent check", async () => {
+		setIsTTY(true, false)
+		setFetchImpl(makeFetchOk("1.0.0"))
+		await checkForUpdatesUpfront("0.6.6")
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(cacheExists()).toBe(true)
 	})
 })

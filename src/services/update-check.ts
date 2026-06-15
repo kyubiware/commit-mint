@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import { dirname, join } from "node:path"
-import { log } from "@clack/prompts"
+import { log, spinner } from "@clack/prompts"
 import { cyan, green, yellow } from "kolorist"
 import semver from "semver"
 import { debug } from "../utils/debug.js"
@@ -95,11 +95,27 @@ function saveCache(entry: CacheEntry): Promise<void> {
 	return Promise.resolve()
 }
 
-async function fetchLatest(): Promise<string | null> {
+/**
+ * Fetch latest version from the registry. Aborts on FETCH_TIMEOUT_MS or when
+ * `parentSignal` aborts (user keypress). Returns null on any failure so the
+ * caller can degrade silently.
+ */
+async function fetchLatest(parentSignal?: AbortSignal): Promise<string | null> {
 	debug("fetchLatest: GET %s (timeout=%dms)", REGISTRY_URL, FETCH_TIMEOUT_MS)
 	try {
 		const controller = new AbortController()
 		const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+		// Wire parent abort (user keypress) → fetch abort.
+		const onParentAbort = () => controller.abort()
+		if (parentSignal) {
+			if (parentSignal.aborted) {
+				controller.abort()
+			} else {
+				parentSignal.addEventListener("abort", onParentAbort, { once: true })
+			}
+		}
+
 		try {
 			const response = await fetchImpl(REGISTRY_URL, { signal: controller.signal })
 			if (!response.ok) {
@@ -115,6 +131,7 @@ async function fetchLatest(): Promise<string | null> {
 			return data.latest
 		} finally {
 			clearTimeout(timer)
+			if (parentSignal) parentSignal.removeEventListener("abort", onParentAbort)
 		}
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err)
@@ -133,9 +150,13 @@ function displayNag(current: string, latest: string): void {
 
 /**
  * Run the full update check. Exported for tests; the public surface is
- * {@link checkForUpdates}, which schedules this on `beforeExit`.
+ * {@link checkForUpdatesUpfront}. Accepts an optional AbortSignal that
+ * propagates to the underlying fetch — used by the cancellable spinner.
  */
-export async function runUpdateCheck(currentVersion: string): Promise<void> {
+export async function runUpdateCheck(
+	currentVersion: string,
+	parentSignal?: AbortSignal,
+): Promise<void> {
 	debug("runUpdateCheck: currentVersion=%s", currentVersion)
 	if (shouldSkip(currentVersion)) {
 		debug(
@@ -159,7 +180,7 @@ export async function runUpdateCheck(currentVersion: string): Promise<void> {
 		} else {
 			debug("runUpdateCheck: no cache, fetching")
 		}
-		const latest = await fetchLatest()
+		const latest = await fetchLatest(parentSignal)
 		if (latest === null) {
 			debug("runUpdateCheck: fetch returned null, not saving cache")
 			return
@@ -178,23 +199,146 @@ export async function runUpdateCheck(currentVersion: string): Promise<void> {
 }
 
 /**
- * Register the update check to run once on `process.beforeExit`.
+ * Run the update check at startup. Silent when:
+ *   - skip conditions match (CI, NO_UPDATE_NOTIFIER, NODE_ENV=test, non-TTY
+ *     stderr, invalid version)
+ *   - cache is fresh (< 24h old) — only displays nag if update available
+ *   - stdin is non-interactive (piped) — runs silently without spinner
  *
- * Uses `process.once` (not `on`) so the listener can't re-fire after the
- * async check schedules I/O — repeated re-fire is what kept the process
- * alive when the registry fetch failed or the undici keep-alive socket
- * lingered. After the check resolves we explicitly `process.exit` to
- * short-circuit the undici socket's ~4s keep-alive window; any caller-set
- * `process.exitCode` is preserved.
+ * On a stale/missing cache with interactive stdin, shows a spinner that the
+ * user can dismiss by pressing any key. Ctrl+C restores the terminal and
+ * exits with conventional code 130.
  */
-export function checkForUpdates(currentVersion: string): void {
-	debug("checkForUpdates: registering beforeExit listener (currentVersion=%s)", currentVersion)
-	process.once("beforeExit", () => {
-		debug("checkForUpdates: beforeExit fired, running update check")
-		void runUpdateCheck(currentVersion).finally(() => {
-			const code = process.exitCode ?? 0
-			debug("checkForUpdates: forcing process.exit(%d)", code)
-			process.exit(code)
-		})
-	})
+export async function checkForUpdatesUpfront(currentVersion: string): Promise<void> {
+	debug("checkForUpdatesUpfront: currentVersion=%s", currentVersion)
+	if (shouldSkip(currentVersion)) {
+		debug(
+			"checkForUpdatesUpfront: skipped (NO_UPDATE_NOTIFIER / CI / NODE_ENV=test / non-TTY / invalid version)",
+		)
+		return
+	}
+
+	// Fast path: fresh cache, no network needed.
+	const cached = await loadCache()
+	if (cached && Date.now() - cached.checkedAt < TTL_MS) {
+		debug("checkForUpdatesUpfront: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
+		if (semver.gt(cached.latest, currentVersion)) {
+			displayNag(currentVersion, cached.latest)
+		} else {
+			debug("checkForUpdatesUpfront: current >= latest, no nag")
+		}
+		return
+	}
+
+	if (cached) {
+		debug("checkForUpdatesUpfront: cache stale, refetching")
+	} else {
+		debug("checkForUpdatesUpfront: no cache, fetching")
+	}
+
+	// Slow path: cancellable spinner if stdin is interactive.
+	const stdin = process.stdin
+	if (stdin.isTTY !== true || typeof stdin.setRawMode !== "function") {
+		debug("checkForUpdatesUpfront: stdin not interactive, running silent check")
+		await runUpdateCheck(currentVersion)
+		return
+	}
+
+	await runCheckWithSpinner(currentVersion)
+}
+
+/**
+ * Attach a "press any key to skip" listener to stdin. Returns a cleanup
+ * function that restores raw mode + pauses stdin; safe to call multiple times.
+ * Returns `failed: true` if raw mode could not be enabled (caller should fall
+ * back to a silent check).
+ *
+ * On any keypress: aborts `controller`. On Ctrl+C (byte 0x03): runs cleanup,
+ * stops the spinner with `spinnerMsg`, and exits with conventional code 130.
+ */
+function attachStdinSkip(
+	controller: AbortController,
+	spinner: { stop: (msg: string) => void },
+	spinnerMsg: string,
+): { cleanup: () => void; failed: boolean } {
+	const stdin = process.stdin
+	let cleanedUp = false
+
+	const cleanup = (): void => {
+		if (cleanedUp) return
+		cleanedUp = true
+		stdin.off("data", onData)
+		try {
+			stdin.setRawMode(false)
+		} catch (err) {
+			debug(
+				"attachStdinSkip: setRawMode(false) failed — %s",
+				err instanceof Error ? err.message : String(err),
+			)
+		}
+		try {
+			stdin.pause()
+		} catch {
+			// ignore — already paused
+		}
+	}
+
+	function onData(buffer: Buffer): void {
+		const byte = buffer[0]
+		debug("attachStdinSkip: stdin byte=0x%s", byte.toString(16).padStart(2, "0"))
+		if (byte === 0x03) {
+			// Ctrl+C in raw mode does not auto-generate SIGINT. Restore the
+			// terminal before exiting so the user's shell isn't left in raw mode.
+			debug("attachStdinSkip: Ctrl+C (0x03), exiting")
+			cleanup()
+			spinner.stop(spinnerMsg)
+			process.exit(130)
+		}
+		debug("attachStdinSkip: user pressed key, aborting check")
+		controller.abort()
+	}
+
+	try {
+		stdin.setRawMode(true)
+		stdin.resume()
+		stdin.on("data", onData)
+		return { cleanup, failed: false }
+	} catch (err) {
+		debug(
+			"attachStdinSkip: setRawMode failed — %s",
+			err instanceof Error ? err.message : String(err),
+		)
+		return { cleanup: () => {}, failed: true }
+	}
+}
+
+/**
+ * Show a cancellable spinner while the check runs. Puts stdin in raw mode to
+ * capture individual keypresses via {@link attachStdinSkip}.
+ */
+async function runCheckWithSpinner(currentVersion: string): Promise<void> {
+	debug("runCheckWithSpinner: showing cancellable spinner")
+	const s = spinner()
+	s.start("Checking for updates (press any key to skip)")
+
+	const controller = new AbortController()
+	const handler = attachStdinSkip(controller, s, "Cancelled")
+
+	if (handler.failed) {
+		s.stop("")
+		await runUpdateCheck(currentVersion)
+		return
+	}
+
+	try {
+		await runUpdateCheck(currentVersion, controller.signal)
+	} finally {
+		handler.cleanup()
+		if (controller.signal.aborted) {
+			debug("runCheckWithSpinner: spinner dismissed by user")
+			s.stop("Skipped")
+		} else {
+			s.stop("Update check complete")
+		}
+	}
 }
