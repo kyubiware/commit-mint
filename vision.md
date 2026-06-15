@@ -1,6 +1,6 @@
 # commit-mint
 
-> A commit tool that actually handles hook failures.
+> AI-powered git commit tool — auto-group changed files, generate messages, run pre-commit checks.
 
 ## Problem
 

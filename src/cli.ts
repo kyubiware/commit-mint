@@ -15,7 +15,8 @@ cli(
 	{
 		name: "cmint",
 		version,
-		description: "A commit tool that actually handles hook failures",
+		description:
+			"AI-powered git commit tool — auto-group changed files, generate messages, run pre-commit checks",
 		flags: {
 			retry: {
 				type: Boolean,

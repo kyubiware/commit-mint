@@ -1,7 +1,7 @@
 {
 	"name": "@kyubiware/commit-mint",
 	"version": "0.6.5",
-	"description": "🌿 A commit tool that actually handles hook failures",
+	"description": "🌿 AI-powered git commit tool — auto-group changed files, generate messages, run pre-commit checks",
 	"type": "module",
 	"bin": {
 		"cmint": "./dist/cli.mjs"
