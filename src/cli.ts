@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-import { cli, command } from "cleye";
-import pkg from "../package.json" with { type: "json" };
+import { cli, command } from "cleye"
+import pkg from "../package.json" with { type: "json" }
 
-const { version } = pkg;
+const { version } = pkg
 
-import { agentCommand } from "./commands/agent.js";
-import { commitCommand } from "./commands/commit.js";
-import { configCommand } from "./commands/config.js";
-import { logsCommand } from "./commands/logs.js";
-import { setAgentMode } from "./utils/agent.js";
-import { setDebug, writeSessionHeader } from "./utils/debug.js";
+import { agentCommand } from "./commands/agent.js"
+import { commitCommand } from "./commands/commit.js"
+import { configCommand } from "./commands/config.js"
+import { logsCommand } from "./commands/logs.js"
+import { setAgentMode } from "./utils/agent.js"
+import { setDebug, writeSessionHeader } from "./utils/debug.js"
 
 cli(
 	{
@@ -71,22 +71,22 @@ cli(
 					},
 				},
 				async (argv) => {
-					await logsCommand(argv.flags);
+					await logsCommand(argv.flags)
 				},
 			),
 			command({ name: "config" }, async () => {
-				await configCommand();
+				await configCommand()
 			}),
 		],
 	},
 	(argv) => {
-		writeSessionHeader();
-		setDebug(argv.flags.debug);
+		writeSessionHeader()
+		setDebug(argv.flags.debug)
 		if (argv.flags.agent) {
-			setAgentMode(true);
-			agentCommand(argv.flags);
+			setAgentMode(true)
+			agentCommand(argv.flags)
 		} else {
-			commitCommand(argv.flags);
+			commitCommand(argv.flags)
 		}
 	},
-);
+)

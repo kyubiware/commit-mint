@@ -1,14 +1,14 @@
 declare module "picomatch" {
 	interface PicomatchOptions {
-		dot?: boolean;
-		matchBase?: boolean;
-		posixSlashes?: boolean;
-		strictBrackets?: boolean;
+		dot?: boolean
+		matchBase?: boolean
+		posixSlashes?: boolean
+		strictBrackets?: boolean
 	}
 
-	type MatchFunction = (value: string) => boolean;
+	type MatchFunction = (value: string) => boolean
 
-	function picomatch(pattern: string, options?: PicomatchOptions): MatchFunction;
+	function picomatch(pattern: string, options?: PicomatchOptions): MatchFunction
 
-	export default picomatch;
+	export default picomatch
 }

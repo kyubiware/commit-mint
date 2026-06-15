@@ -1,33 +1,33 @@
-import { debug } from "../utils/debug.js";
-import { mapGroqError } from "./ai.js";
-import type { ChangedFile } from "./git.js";
-import { getDefaultExcludes } from "./git.js";
-import { type CommitGroup, parseGroupingResponse } from "./grouping-parser.js";
+import { debug } from "../utils/debug.js"
+import { mapGroqError } from "./ai.js"
+import type { ChangedFile } from "./git.js"
+import { getDefaultExcludes } from "./git.js"
+import { type CommitGroup, parseGroupingResponse } from "./grouping-parser.js"
 import {
 	type ChatClient,
 	createProvider,
 	formatProviderName,
 	type ProviderName,
-} from "./provider.js";
+} from "./provider.js"
 
-export type { CommitGroup } from "./grouping-parser.js";
+export type { CommitGroup } from "./grouping-parser.js"
 
 export interface GroupingResult {
-	groups: CommitGroup[];
-	excluded: string[];
+	groups: CommitGroup[]
+	excluded: string[]
 }
 
 function matchesExcludePattern(filePath: string, pattern: string): boolean {
-	if (pattern === filePath) return true;
+	if (pattern === filePath) return true
 	if (pattern.endsWith("/**")) {
-		const prefix = pattern.slice(0, -3);
-		return filePath === prefix || filePath.startsWith(`${prefix}/`);
+		const prefix = pattern.slice(0, -3)
+		return filePath === prefix || filePath.startsWith(`${prefix}/`)
 	}
 	if (pattern.startsWith("*.")) {
-		const suffix = pattern.slice(1);
-		return filePath.endsWith(suffix);
+		const suffix = pattern.slice(1)
+		return filePath.endsWith(suffix)
 	}
-	return false;
+	return false
 }
 
 /** Lockfiles that should be kept when their companion manifest is present */
@@ -37,63 +37,63 @@ const LOCKFILE_COMPANIONS: Record<string, string> = {
 	"yarn.lock": "package.json",
 	"bun.lock": "package.json",
 	"bun.lockb": "package.json",
-};
+}
 
 export function filterExcludedFiles(files: ChangedFile[]): {
-	included: ChangedFile[];
-	excluded: string[];
+	included: ChangedFile[]
+	excluded: string[]
 } {
-	const patterns = getDefaultExcludes();
-	const included: ChangedFile[] = [];
-	const excluded: ChangedFile[] = [];
-	const filePaths = new Set(files.map((f) => f.path));
+	const patterns = getDefaultExcludes()
+	const included: ChangedFile[] = []
+	const excluded: ChangedFile[] = []
+	const filePaths = new Set(files.map((f) => f.path))
 
 	for (const file of files) {
-		const isExcluded = patterns.some((pattern) => matchesExcludePattern(file.path, pattern));
+		const isExcluded = patterns.some((pattern) => matchesExcludePattern(file.path, pattern))
 		if (isExcluded) {
-			excluded.push(file);
+			excluded.push(file)
 		} else {
-			included.push(file);
+			included.push(file)
 		}
 	}
 
 	// Promote lockfiles whose companion manifest is present
-	const stillExcluded: string[] = [];
+	const stillExcluded: string[] = []
 	for (const file of excluded) {
-		const companion = LOCKFILE_COMPANIONS[file.path];
+		const companion = LOCKFILE_COMPANIONS[file.path]
 		if (companion && filePaths.has(companion)) {
-			included.push(file);
+			included.push(file)
 		} else {
-			stillExcluded.push(file.path);
+			stillExcluded.push(file.path)
 		}
 	}
 
-	debug("filterExcludedFiles: %d included, %d excluded", included.length, stillExcluded.length);
-	return { included, excluded: stillExcluded };
+	debug("filterExcludedFiles: %d included, %d excluded", included.length, stillExcluded.length)
+	return { included, excluded: stillExcluded }
 }
 
 function statusIndicator(status: string): string {
 	switch (status) {
 		case "M":
-			return "modified";
+			return "modified"
 		case "A":
-			return "added";
+			return "added"
 		case "D":
-			return "deleted";
+			return "deleted"
 		case "R":
-			return "renamed";
+			return "renamed"
 		case "C":
-			return "copied";
+			return "copied"
 		case "?":
 		case "??":
-			return "untracked";
+			return "untracked"
 		default:
-			return "changed";
+			return "changed"
 	}
 }
 
 export function buildFileSummary(files: ChangedFile[]): string {
-	return files.map((f) => `${f.path} (${statusIndicator(f.status)})`).join("\n");
+	return files.map((f) => `${f.path} (${statusIndicator(f.status)})`).join("\n")
 }
 
 export function buildGroupingSystemPrompt(): string {
@@ -113,11 +113,11 @@ export function buildGroupingSystemPrompt(): string {
 		"files: array of exact file paths from the input",
 		"",
 		"Output ONLY valid JSON. No markdown fences, no explanation.",
-	].join("\n");
+	].join("\n")
 }
 
 function buildGroupingUserPrompt(summary: string): string {
-	return ["Group the following changed files into logical commits:", "", summary].join("\n");
+	return ["Group the following changed files into logical commits:", "", summary].join("\n")
 }
 
 export function buildRetryGroupingPrompt(): string {
@@ -141,7 +141,7 @@ export function buildRetryGroupingPrompt(): string {
 		"files: array of exact file paths from the input",
 		"",
 		"Output ONLY valid JSON. No markdown fences, no explanation.",
-	].join("\n");
+	].join("\n")
 }
 
 export async function generateGroups(
@@ -152,55 +152,55 @@ export async function generateGroups(
 	provider?: ProviderName,
 	proxy?: string,
 ): Promise<GroupingResult> {
-	debug("generateGroups: %d files, model=%s", files.length, model ?? "default");
+	debug("generateGroups: %d files, model=%s", files.length, model ?? "default")
 
-	const { included, excluded } = filterExcludedFiles(files);
+	const { included, excluded } = filterExcludedFiles(files)
 
 	if (included.length === 0) {
-		debug("generateGroups: no files to group after exclusion");
-		return { groups: [], excluded };
+		debug("generateGroups: no files to group after exclusion")
+		return { groups: [], excluded }
 	}
 
-	const summary = buildFileSummary(included);
-	const systemPrompt = buildGroupingSystemPrompt();
-	const userPrompt = buildGroupingUserPrompt(summary);
+	const summary = buildFileSummary(included)
+	const systemPrompt = buildGroupingSystemPrompt()
+	const userPrompt = buildGroupingUserPrompt(summary)
 
-	debug("File summary:\n%s", summary);
-	debug("User prompt length: %d chars", userPrompt.length);
+	debug("File summary:\n%s", summary)
+	debug("User prompt length: %d chars", userPrompt.length)
 
-	const timeoutMs = timeout ?? 60000;
+	const timeoutMs = timeout ?? 60000
 	const { client, model: resolvedModel } = createProvider({
 		provider: provider ?? "groq",
 		apiKey,
 		modelOverride: model,
 		timeout: timeoutMs,
 		baseURLOverride: proxy,
-	});
+	})
 
 	try {
-		let rawGroups = await callGroupingAI(client, resolvedModel, systemPrompt, userPrompt);
-		debug("generateGroups: parsed %d raw groups", rawGroups.length);
-		let validated = validateGroups(rawGroups, included);
-		debug("generateGroups: %d validated groups", validated.length);
+		let rawGroups = await callGroupingAI(client, resolvedModel, systemPrompt, userPrompt)
+		debug("generateGroups: parsed %d raw groups", rawGroups.length)
+		let validated = validateGroups(rawGroups, included)
+		debug("generateGroups: %d validated groups", validated.length)
 
 		// Retry once if grouping quality is low. Evaluate against the raw AI result:
 		// validateGroups() silently adds an "Other changes" group for any ungrouped
 		// files, which would mask an empty model response (turning [] into a single
 		// catch-all) and skip the retry the user needs.
 		if (isLowQualityGrouping(rawGroups, included)) {
-			debug("generateGroups: low quality result, retrying with stricter prompt");
-			const retryPrompt = buildRetryGroupingPrompt();
-			rawGroups = await callGroupingAI(client, resolvedModel, retryPrompt, userPrompt);
-			debug("generateGroups retry: parsed %d raw groups", rawGroups.length);
-			validated = validateGroups(rawGroups, included);
-			debug("generateGroups retry: %d validated groups", validated.length);
+			debug("generateGroups: low quality result, retrying with stricter prompt")
+			const retryPrompt = buildRetryGroupingPrompt()
+			rawGroups = await callGroupingAI(client, resolvedModel, retryPrompt, userPrompt)
+			debug("generateGroups retry: parsed %d raw groups", rawGroups.length)
+			validated = validateGroups(rawGroups, included)
+			debug("generateGroups retry: %d validated groups", validated.length)
 		}
 
-		return { groups: validated, excluded };
+		return { groups: validated, excluded }
 	} catch (error) {
-		debug("generateGroups error: %s", error instanceof Error ? error.message : String(error));
-		const providerLabel = provider ? formatProviderName(provider) : undefined;
-		throw mapGroqError(error, providerLabel);
+		debug("generateGroups error: %s", error instanceof Error ? error.message : String(error))
+		const providerLabel = provider ? formatProviderName(provider) : undefined
+		throw mapGroqError(error, providerLabel)
 	}
 }
 
@@ -218,72 +218,72 @@ async function callGroupingAI(
 		model,
 		temperature: 0.3,
 		max_tokens: 2048,
-	})) as { choices: { message?: { content?: string }; finish_reason?: string }[] };
+	})) as { choices: { message?: { content?: string }; finish_reason?: string }[] }
 
-	const rawContent = completion.choices[0]?.message?.content;
-	const content = typeof rawContent === "string" ? rawContent.trim() : "";
+	const rawContent = completion.choices[0]?.message?.content
+	const content = typeof rawContent === "string" ? rawContent.trim() : ""
 
 	debug(
 		"callGroupingAI response: choices=%d, finishReason=%s, contentLen=%d",
 		completion.choices.length,
 		completion.choices[0]?.finish_reason ?? "(none)",
 		content.length,
-	);
-	debug("callGroupingAI raw content: %s", content.slice(0, 500) || "(empty)");
+	)
+	debug("callGroupingAI raw content: %s", content.slice(0, 500) || "(empty)")
 
 	if (!content) {
-		throw new Error("AI returned an empty grouping response");
+		throw new Error("AI returned an empty grouping response")
 	}
 
-	return parseGroupingResponse(content);
+	return parseGroupingResponse(content)
 }
 
 /** Minimum file count where a single-group result is considered low quality */
-const MIN_FILES_FOR_QUALITY_CHECK = 5;
+const MIN_FILES_FOR_QUALITY_CHECK = 5
 
 export function isLowQualityGrouping(groups: CommitGroup[], allFiles: ChangedFile[]): boolean {
 	// No files to group → empty grouping is the correct result, not low quality.
-	if (allFiles.length === 0) return false;
+	if (allFiles.length === 0) return false
 	// Files were provided but the model returned no groups — retry once before
 	// falling back to "Other changes" so the user still gets a sensible commit.
-	if (groups.length === 0) return true;
-	if (allFiles.length < MIN_FILES_FOR_QUALITY_CHECK) return false;
-	return groups.length === 1;
+	if (groups.length === 0) return true
+	if (allFiles.length < MIN_FILES_FOR_QUALITY_CHECK) return false
+	return groups.length === 1
 }
 
 export function validateGroups(groups: CommitGroup[], allFiles: ChangedFile[]): CommitGroup[] {
-	const validPaths = new Set(allFiles.map((f) => f.path));
-	const seen = new Set<string>();
-	const validated: CommitGroup[] = [];
+	const validPaths = new Set(allFiles.map((f) => f.path))
+	const seen = new Set<string>()
+	const validated: CommitGroup[] = []
 
 	for (const group of groups) {
 		const uniqueFiles = group.files.filter((f) => {
-			if (!validPaths.has(f)) return false; // AI-hallucinated path
-			if (seen.has(f)) return false; // duplicate across groups
-			seen.add(f);
-			return true;
-		});
+			if (!validPaths.has(f)) return false // AI-hallucinated path
+			if (seen.has(f)) return false // duplicate across groups
+			seen.add(f)
+			return true
+		})
 
 		if (uniqueFiles.length > 0) {
 			validated.push({
 				name: group.name,
 				description: group.description,
 				files: uniqueFiles,
-			});
+			})
 		}
 	}
 
 	// Find files not in any group
-	const ungrouped = allFiles.filter((f) => !seen.has(f.path));
+	const ungrouped = allFiles.filter((f) => !seen.has(f.path))
 
 	if (ungrouped.length > 0) {
-		debug("validateGroups: %d ungrouped files added to 'Other changes'", ungrouped.length);
+		debug("validateGroups: %d ungrouped files added to 'Other changes'", ungrouped.length)
 		validated.push({
 			name: "Other changes",
 			description: "Miscellaneous changes that did not fit into other groups",
 			files: ungrouped.map((f) => f.path),
-		});
+		})
 	}
 
-	return validated;
+	return validated
 }

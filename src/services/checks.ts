@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
-import { access, constants } from "node:fs/promises";
-import { extname, join } from "node:path";
-import { execa } from "execa";
-import picomatch from "picomatch";
-import { debug } from "../utils/debug.js";
-import { extractToolName } from "./hooks.js";
+import { readFileSync } from "node:fs"
+import { access, constants } from "node:fs/promises"
+import { extname, join } from "node:path"
+import { execa } from "execa"
+import picomatch from "picomatch"
+import { debug } from "../utils/debug.js"
+import { extractToolName } from "./hooks.js"
 
 /** Config file names, checked in priority order (matches lint-staged naming conventions) */
 const CONFIG_FILES = [
@@ -22,27 +22,27 @@ const CONFIG_FILES = [
 	"cmint.config.ts",
 	"cmint.config.cjs",
 	"cmint.config.cts",
-] as const;
+] as const
 
 /** Config shape from .cmintrc — glob keys map to command strings, string arrays, or functions */
 export interface CheckConfig {
-	[glob: string]: string | string[] | ((filenames: string[]) => string | string[]);
+	[glob: string]: string | string[] | ((filenames: string[]) => string | string[])
 }
 
 /** Result of a single check command execution */
 export interface CheckResult {
-	ok: boolean;
-	tool: string;
-	command: string;
-	stdout: string;
-	stderr: string;
-	files: string[];
+	ok: boolean
+	tool: string
+	command: string
+	stdout: string
+	stderr: string
+	files: string[]
 }
 
 /** Aggregate result from running all checks */
 export interface CheckResults {
-	ok: boolean;
-	results: CheckResult[];
+	ok: boolean
+	results: CheckResult[]
 }
 
 /**
@@ -50,18 +50,18 @@ export interface CheckResults {
  * Returns the config file path, or null if none found.
  */
 export async function detectConfig(repoRoot: string): Promise<string | null> {
-	debug("detectConfig: checking for config in %s", repoRoot);
+	debug("detectConfig: checking for config in %s", repoRoot)
 	for (const name of CONFIG_FILES) {
 		try {
-			await access(join(repoRoot, name), constants.R_OK);
-			debug("detectConfig: found %s", name);
-			return join(repoRoot, name);
+			await access(join(repoRoot, name), constants.R_OK)
+			debug("detectConfig: found %s", name)
+			return join(repoRoot, name)
 		} catch {
 			// try next config file name
 		}
 	}
-	debug("detectConfig: no config file found");
-	return null;
+	debug("detectConfig: no config file found")
+	return null
 }
 
 /**
@@ -69,40 +69,40 @@ export async function detectConfig(repoRoot: string): Promise<string | null> {
  * Throws if the loaded value is missing or not a non-null object.
  */
 export async function loadConfig(repoRoot: string): Promise<CheckConfig> {
-	const configPath = await detectConfig(repoRoot);
-	if (!configPath) throw new Error("No cmint config file found");
+	const configPath = await detectConfig(repoRoot)
+	if (!configPath) throw new Error("No cmint config file found")
 
-	debug("loadConfig: loading %s", configPath);
-	const ext = extname(configPath);
-	const isJSON = ext === ".json";
-	const isTS = ext === ".ts" || ext === ".mts" || ext === ".cts";
-	const isCJS = ext === ".cjs";
-	const needsJiti = isTS || isCJS;
+	debug("loadConfig: loading %s", configPath)
+	const ext = extname(configPath)
+	const isJSON = ext === ".json"
+	const isTS = ext === ".ts" || ext === ".mts" || ext === ".cts"
+	const isCJS = ext === ".cjs"
+	const needsJiti = isTS || isCJS
 
-	let config: unknown;
+	let config: unknown
 
 	if (isJSON) {
-		const raw = readFileSync(configPath, "utf-8");
-		config = JSON.parse(raw);
+		const raw = readFileSync(configPath, "utf-8")
+		config = JSON.parse(raw)
 	} else if (needsJiti) {
-		const { createJiti } = await import("jiti");
-		const jiti = createJiti(import.meta.url, {});
-		const mod = await jiti.import(configPath);
-		config = (mod as { default?: unknown }).default ?? mod;
+		const { createJiti } = await import("jiti")
+		const jiti = createJiti(import.meta.url, {})
+		const mod = await jiti.import(configPath)
+		config = (mod as { default?: unknown }).default ?? mod
 	} else {
 		// .js, .mjs, or no extension
-		const imported = (await import(configPath)) as { default?: unknown };
-		config = imported.default;
+		const imported = (await import(configPath)) as { default?: unknown }
+		config = imported.default
 	}
 
 	if (!config || typeof config !== "object" || Array.isArray(config)) {
-		throw new Error("cmint config must export a non-null object with glob\u2192command mappings");
+		throw new Error("cmint config must export a non-null object with glob\u2192command mappings")
 	}
 	debug(
 		"loadConfig: loaded %d glob patterns",
 		Object.keys(config as Record<string, unknown>).length,
-	);
-	return config as CheckConfig;
+	)
+	return config as CheckConfig
 }
 
 /**
@@ -115,8 +115,8 @@ export async function runCommand(
 	timeout: number,
 	repoRoot?: string,
 ): Promise<CheckResult> {
-	debug("runCommand: %s (timeout: %dms)", command, timeout);
-	const tool = extractToolName(command) ?? command.split(" ")[0];
+	debug("runCommand: %s (timeout: %dms)", command, timeout)
+	const tool = extractToolName(command) ?? command.split(" ")[0]
 
 	try {
 		const result = await execa(command, {
@@ -126,9 +126,9 @@ export async function runCommand(
 			all: true,
 			preferLocal: true,
 			...(repoRoot ? { localDir: repoRoot } : {}),
-		});
-		const ok = !result.failed;
-		debug("runCommand: %s \u2014 ok=%s", tool, ok);
+		})
+		const ok = !result.failed
+		debug("runCommand: %s \u2014 ok=%s", tool, ok)
 		return {
 			ok,
 			tool: tool,
@@ -136,14 +136,14 @@ export async function runCommand(
 			stdout: result.stdout ?? "",
 			stderr: result.stderr ?? "",
 			files: [],
-		};
+		}
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		const isTimedOut = msg.toLowerCase().includes("timed out");
+		const msg = err instanceof Error ? err.message : String(err)
+		const isTimedOut = msg.toLowerCase().includes("timed out")
 		const isNotFound =
-			msg.toLowerCase().includes("enoent") || msg.toLowerCase().includes("not found");
+			msg.toLowerCase().includes("enoent") || msg.toLowerCase().includes("not found")
 
-		debug("runCommand: %s \u2014 error: %s", tool, msg);
+		debug("runCommand: %s \u2014 error: %s", tool, msg)
 		return {
 			ok: false,
 			tool: tool,
@@ -155,7 +155,7 @@ export async function runCommand(
 					? `Command not found: ${tool}`
 					: msg,
 			files: [],
-		};
+		}
 	}
 }
 
@@ -165,18 +165,18 @@ export async function runCommand(
  * Dotfiles are included (dot: true).
  */
 export function matchFiles(pattern: string, files: string[]): string[] {
-	if (!pattern) return [];
-	const matchBase = !pattern.includes("/");
+	if (!pattern) return []
+	const matchBase = !pattern.includes("/")
 	const isMatch = picomatch(pattern, {
 		dot: true,
 		posixSlashes: true,
 		strictBrackets: true,
-	});
+	})
 	return files.filter((f) => {
-		const parts = f.split("/");
-		const target = matchBase ? parts[parts.length - 1] : f;
-		return isMatch(target);
-	});
+		const parts = f.split("/")
+		const target = matchBase ? parts[parts.length - 1] : f
+		return isMatch(target)
+	})
 }
 
 /**
@@ -185,9 +185,9 @@ export function matchFiles(pattern: string, files: string[]): string[] {
  * If no files are provided, the base command is returned as-is.
  */
 export function buildCommand(command: string, files: string[]): string {
-	if (files.length === 0) return command;
-	const quotedFiles = files.map((f) => (f.includes(" ") ? `"${f}"` : f));
-	return `${command} ${quotedFiles.join(" ")}`;
+	if (files.length === 0) return command
+	const quotedFiles = files.map((f) => (f.includes(" ") ? `"${f}"` : f))
+	return `${command} ${quotedFiles.join(" ")}`
 }
 
 /**
@@ -195,8 +195,8 @@ export function buildCommand(command: string, files: string[]): string {
  * Function-originated commands are run as-is; string commands get matched files appended.
  */
 interface ResolvedCommand {
-	command: string;
-	fromFunction: boolean;
+	command: string
+	fromFunction: boolean
 }
 
 /**
@@ -206,9 +206,9 @@ function resolveFunction(
 	fn: (files: string[]) => string | string[],
 	matchedFiles: string[],
 ): ResolvedCommand[] {
-	const resolved = fn(matchedFiles);
-	const items = Array.isArray(resolved) ? resolved : [resolved];
-	return items.map((command) => ({ command, fromFunction: true }));
+	const resolved = fn(matchedFiles)
+	const items = Array.isArray(resolved) ? resolved : [resolved]
+	return items.map((command) => ({ command, fromFunction: true }))
 }
 
 /**
@@ -221,20 +221,20 @@ function resolveCommands(
 	matchedFiles: string[],
 ): ResolvedCommand[] {
 	if (typeof commands === "function") {
-		return resolveFunction(commands as (files: string[]) => string | string[], matchedFiles);
+		return resolveFunction(commands as (files: string[]) => string | string[], matchedFiles)
 	}
 	if (Array.isArray(commands)) {
-		const result: ResolvedCommand[] = [];
+		const result: ResolvedCommand[] = []
 		for (const cmd of commands) {
 			if (typeof cmd === "function") {
-				result.push(...resolveFunction(cmd, matchedFiles));
+				result.push(...resolveFunction(cmd, matchedFiles))
 			} else {
-				result.push({ command: cmd, fromFunction: false });
+				result.push({ command: cmd, fromFunction: false })
 			}
 		}
-		return result;
+		return result
 	}
-	return [{ command: commands as string, fromFunction: false }];
+	return [{ command: commands as string, fromFunction: false }]
 }
 
 /**
@@ -250,16 +250,16 @@ async function runCommandsForGlob(
 	repoRoot: string,
 ): Promise<boolean> {
 	for (const { command, fromFunction } of cmds) {
-		const fullCommand = fromFunction ? command : buildCommand(command, matchedFiles);
-		debug("runCommandsForGlob: running '%s'", fullCommand);
-		const result = await runCommand(fullCommand, timeout, repoRoot);
-		results.push({ ...result, files: matchedFiles });
+		const fullCommand = fromFunction ? command : buildCommand(command, matchedFiles)
+		debug("runCommandsForGlob: running '%s'", fullCommand)
+		const result = await runCommand(fullCommand, timeout, repoRoot)
+		results.push({ ...result, files: matchedFiles })
 		if (!result.ok) {
-			debug("runCommandsForGlob: check failed, stopping (fail-fast)");
-			return false;
+			debug("runCommandsForGlob: check failed, stopping (fail-fast)")
+			return false
 		}
 	}
-	return true;
+	return true
 }
 
 /**
@@ -272,34 +272,34 @@ export async function runAllChecks(
 	stagedFiles: string[],
 	timeout: number,
 ): Promise<CheckResults> {
-	debug("runAllChecks: %d staged files, checking for config in %s", stagedFiles.length, repoRoot);
+	debug("runAllChecks: %d staged files, checking for config in %s", stagedFiles.length, repoRoot)
 
-	const configPath = await detectConfig(repoRoot);
+	const configPath = await detectConfig(repoRoot)
 	if (!configPath) {
-		debug("runAllChecks: no config found, skipping checks");
-		return { ok: true, results: [] };
+		debug("runAllChecks: no config found, skipping checks")
+		return { ok: true, results: [] }
 	}
 
-	const config = await loadConfig(repoRoot);
-	debug("runAllChecks: loaded config with %d patterns", Object.keys(config).length);
+	const config = await loadConfig(repoRoot)
+	debug("runAllChecks: loaded config with %d patterns", Object.keys(config).length)
 
-	const results: CheckResult[] = [];
+	const results: CheckResult[] = []
 
 	for (const [glob, commands] of Object.entries(config)) {
-		const matchedFiles = matchFiles(glob, stagedFiles);
+		const matchedFiles = matchFiles(glob, stagedFiles)
 
 		if (matchedFiles.length === 0) {
-			debug("runAllChecks: no files matched pattern '%s'", glob);
-			continue;
+			debug("runAllChecks: no files matched pattern '%s'", glob)
+			continue
 		}
-		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length);
+		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length)
 
-		const cmds = resolveCommands(commands, matchedFiles);
-		const ok = await runCommandsForGlob(cmds, matchedFiles, timeout, results, repoRoot);
-		if (!ok) return { ok: false, results };
+		const cmds = resolveCommands(commands, matchedFiles)
+		const ok = await runCommandsForGlob(cmds, matchedFiles, timeout, results, repoRoot)
+		if (!ok) return { ok: false, results }
 	}
 
-	const ok = results.every((r) => r.ok);
-	debug("runAllChecks: complete \u2014 ok=%s, %d results", ok, results.length);
-	return { ok, results };
+	const ok = results.every((r) => r.ok)
+	debug("runAllChecks: complete \u2014 ok=%s, %d results", ok, results.length)
+	return { ok, results }
 }

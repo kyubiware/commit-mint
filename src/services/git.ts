@@ -1,41 +1,41 @@
-import type { ExecaError } from "execa";
-import { execa } from "execa";
-import { debug } from "../utils/debug.js";
-import { createStderrParser, type ProgressHandler } from "./hook-progress.js";
+import type { ExecaError } from "execa"
+import { execa } from "execa"
+import { debug } from "../utils/debug.js"
+import { createStderrParser, type ProgressHandler } from "./hook-progress.js"
 
 export class KnownError extends Error {}
 
 export async function assertGitRepo() {
-	debug("assertGitRepo");
+	debug("assertGitRepo")
 	const { failed } = await execa("git", ["rev-parse", "--show-toplevel"], {
 		reject: false,
-	});
+	})
 	if (failed) {
-		throw new KnownError("The current directory must be a Git repository!");
+		throw new KnownError("The current directory must be a Git repository!")
 	}
 }
 
 export async function getRepoRoot() {
-	const { stdout } = await execa("git", ["rev-parse", "--show-toplevel"]);
-	debug("getRepoRoot:", stdout.trim());
-	return stdout.trim();
+	const { stdout } = await execa("git", ["rev-parse", "--show-toplevel"])
+	debug("getRepoRoot:", stdout.trim())
+	return stdout.trim()
 }
 
 export interface StagedDiffResult {
-	files: string[];
-	diff: string;
+	files: string[]
+	diff: string
 }
 
 export interface ExcludedFilesResult {
-	excludedFiles: string[];
+	excludedFiles: string[]
 }
 
-export type DiffResult = StagedDiffResult | ExcludedFilesResult | null;
+export type DiffResult = StagedDiffResult | ExcludedFilesResult | null
 
 export interface ChangedFile {
-	path: string;
-	status: string;
-	staged: boolean;
+	path: string
+	status: string
+	staged: boolean
 }
 
 const DEFAULT_EXCLUDES = [
@@ -50,21 +50,21 @@ const DEFAULT_EXCLUDES = [
 	"*.min.css",
 	"*.lock",
 	".DS_Store",
-];
+]
 
 export function getDefaultExcludes(): string[] {
-	return [...DEFAULT_EXCLUDES];
+	return [...DEFAULT_EXCLUDES]
 }
 
 export async function getStagedDiff(exclude?: string[]): Promise<DiffResult> {
-	const excludeArgs = (exclude ?? []).map((e) => `:(exclude)${e}`);
-	const defaultExcludeArgs = DEFAULT_EXCLUDES.map((e) => `:(exclude)${e}`);
+	const excludeArgs = (exclude ?? []).map((e) => `:(exclude)${e}`)
+	const defaultExcludeArgs = DEFAULT_EXCLUDES.map((e) => `:(exclude)${e}`)
 
 	// Check all staged files without excludes to detect "all excluded" case
-	const { stdout: allFiles } = await execa("git", ["diff", "--cached", "--name-only"]);
+	const { stdout: allFiles } = await execa("git", ["diff", "--cached", "--name-only"])
 	if (!allFiles) {
-		debug("getStagedDiff: no staged files");
-		return null;
+		debug("getStagedDiff: no staged files")
+		return null
 	}
 
 	// Check staged files with excludes applied
@@ -74,13 +74,13 @@ export async function getStagedDiff(exclude?: string[]): Promise<DiffResult> {
 		"--name-only",
 		...defaultExcludeArgs,
 		...excludeArgs,
-	]);
+	])
 
 	if (!files) {
 		// All staged files were excluded
-		const excludedFiles = allFiles.split("\n").filter(Boolean);
-		debug("getStagedDiff: all files excluded:", excludedFiles);
-		return { excludedFiles };
+		const excludedFiles = allFiles.split("\n").filter(Boolean)
+		debug("getStagedDiff: all files excluded:", excludedFiles)
+		return { excludedFiles }
 	}
 
 	const { stdout: diff } = await execa("git", [
@@ -89,15 +89,15 @@ export async function getStagedDiff(exclude?: string[]): Promise<DiffResult> {
 		"--diff-algorithm=minimal",
 		...defaultExcludeArgs,
 		...excludeArgs,
-	]);
+	])
 
-	debug("getStagedDiff:", files.split("\n").filter(Boolean).length, "files,", diff.length, "chars");
-	return { files: files.split("\n").filter(Boolean), diff };
+	debug("getStagedDiff:", files.split("\n").filter(Boolean).length, "files,", diff.length, "chars")
+	return { files: files.split("\n").filter(Boolean), diff }
 }
 
 export async function stageAll() {
-	debug("stageAll: git add -A");
-	await execa("git", ["add", "-A"]);
+	debug("stageAll: git add -A")
+	await execa("git", ["add", "-A"])
 }
 
 export async function resetStaging() {
@@ -105,11 +105,11 @@ export async function resetStaging() {
 	// resolve yet (exit 128, "ambiguous argument 'HEAD'"). Fall back to clearing
 	// the index without referencing HEAD so the first commit can proceed.
 	try {
-		debug("resetStaging: git reset HEAD");
-		await execa("git", ["reset", "HEAD"]);
+		debug("resetStaging: git reset HEAD")
+		await execa("git", ["reset", "HEAD"])
 	} catch {
-		debug("resetStaging: HEAD missing, falling back to git rm --cached");
-		await execa("git", ["rm", "-r", "--cached", "--quiet", "."]);
+		debug("resetStaging: HEAD missing, falling back to git rm --cached")
+		await execa("git", ["rm", "-r", "--cached", "--quiet", "."])
 	}
 }
 
@@ -118,47 +118,47 @@ export async function getHead(): Promise<string | null> {
 	// on a fresh repo. Callers treat "headBefore === headAfter === null" as
 	// "commit failed" and "null → SHA" as "first commit succeeded."
 	try {
-		const { stdout } = await execa("git", ["rev-parse", "HEAD"]);
-		return stdout.trim();
+		const { stdout } = await execa("git", ["rev-parse", "HEAD"])
+		return stdout.trim()
 	} catch {
-		debug("getHead: HEAD does not exist (fresh repo)");
-		return null;
+		debug("getHead: HEAD does not exist (fresh repo)")
+		return null
 	}
 }
 
 export async function getStatusShort() {
-	const { stdout } = await execa("git", ["status", "--short"]);
-	return stdout.trim();
+	const { stdout } = await execa("git", ["status", "--short"])
+	return stdout.trim()
 }
 
 export async function getChangedFiles(): Promise<ChangedFile[]> {
-	const { stdout } = await execa("git", ["status", "--short"]);
-	if (!stdout.trim()) return [];
+	const { stdout } = await execa("git", ["status", "--short"])
+	if (!stdout.trim()) return []
 	const files = stdout
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => {
-			const indexStatus = line[0];
+			const indexStatus = line[0]
 			return {
 				status: line.slice(0, 2).trim(),
 				path: line.slice(3),
 				staged: indexStatus !== " " && indexStatus !== "?",
-			};
-		});
-	debug("getChangedFiles:", files.length, "files");
-	return files;
+			}
+		})
+	debug("getChangedFiles:", files.length, "files")
+	return files
 }
 
 export async function stageFiles(paths: string[]): Promise<void> {
-	debug("stageFiles:", paths);
-	await execa("git", ["add", ...paths]);
+	debug("stageFiles:", paths)
+	await execa("git", ["add", ...paths])
 }
 
 export interface CommitResult {
-	ok: boolean;
-	error?: string;
+	ok: boolean
+	error?: string
 	/** Collected stderr from hooks/lint-staged — set on both success and failure */
-	stderr?: string;
+	stderr?: string
 }
 
 export async function attemptCommit(
@@ -166,34 +166,34 @@ export async function attemptCommit(
 	extraArgs: string[] = [],
 	onProgress?: ProgressHandler,
 ): Promise<CommitResult> {
-	debug("attemptCommit:", message, extraArgs.length ? extraArgs : "(no extra args)");
+	debug("attemptCommit:", message, extraArgs.length ? extraArgs : "(no extra args)")
 	try {
-		const subprocess = execa("git", ["commit", "-m", message, ...extraArgs]);
+		const subprocess = execa("git", ["commit", "-m", message, ...extraArgs])
 
 		// Collect hook output (lint-staged, biome, etc.) for post-commit display
-		const stderrChunks: string[] = [];
-		const parser = onProgress ? createStderrParser() : null;
+		const stderrChunks: string[] = []
+		const parser = onProgress ? createStderrParser() : null
 		subprocess.stderr?.on("data", (chunk: Buffer) => {
-			const text = chunk.toString();
-			stderrChunks.push(text);
+			const text = chunk.toString()
+			stderrChunks.push(text)
 			if (parser && onProgress) {
 				for (const step of parser(text)) {
-					onProgress(step);
+					onProgress(step)
 				}
 			}
-		});
+		})
 
-		await subprocess;
-		debug("attemptCommit: success");
-		return { ok: true, stderr: stderrChunks.join("") };
+		await subprocess
+		debug("attemptCommit: success")
+		return { ok: true, stderr: stderrChunks.join("") }
 	} catch (error) {
-		const e = error as ExecaError;
-		debug("attemptCommit: failed —", e.message?.slice(0, 200));
+		const e = error as ExecaError
+		debug("attemptCommit: failed —", e.message?.slice(0, 200))
 		return {
 			ok: false,
 			error: e.message,
 			stderr: typeof e.stderr === "string" ? e.stderr : "",
-		};
+		}
 	}
 }
 
@@ -201,6 +201,6 @@ export async function attemptCommitNoVerify(
 	message: string,
 	onProgress?: ProgressHandler,
 ): Promise<CommitResult> {
-	debug("attemptCommitNoVerify:", message);
-	return attemptCommit(message, ["--no-verify"], onProgress);
+	debug("attemptCommitNoVerify:", message)
+	return attemptCommit(message, ["--no-verify"], onProgress)
 }

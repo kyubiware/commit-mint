@@ -1,13 +1,13 @@
-import { isCancel, log, outro, spinner } from "@clack/prompts";
-import { dim, green, red } from "kolorist";
-import { generateCommitMessage } from "../services/ai.js";
-import { detectConfig, runAllChecks } from "../services/checks.js";
+import { isCancel, log, outro, spinner } from "@clack/prompts"
+import { dim, green, red } from "kolorist"
+import { generateCommitMessage } from "../services/ai.js"
+import { detectConfig, runAllChecks } from "../services/checks.js"
 import {
 	getModelForProvider,
 	getProviderApiKey,
 	readConfig,
 	setConfigValue,
-} from "../services/config.js";
+} from "../services/config.js"
 import {
 	attemptCommit,
 	attemptCommitNoVerify,
@@ -17,32 +17,32 @@ import {
 	getStagedDiff,
 	resetStaging,
 	stageFiles,
-} from "../services/git.js";
-import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js";
-import { createProgressHandler } from "../services/hook-progress.js";
-import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js";
+} from "../services/git.js"
+import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js"
+import { createProgressHandler } from "../services/hook-progress.js"
+import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js"
 import {
 	formatProviderName,
 	isValidProvider,
 	PROVIDER_CONFIGS,
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
-} from "../services/provider.js";
-import { showCheckFailureMenu } from "../ui/check-failure-menu.js";
-import { stopCheckSpinner } from "../ui/check-summary.js";
-import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js";
-import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js";
-import { reviewCommitMessage } from "../ui/review-message.js";
-import { saveCachedCommit } from "../utils/cache.js";
-import { debug } from "../utils/debug.js";
+} from "../services/provider.js"
+import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
+import { stopCheckSpinner } from "../ui/check-summary.js"
+import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js"
+import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js"
+import { reviewCommitMessage } from "../ui/review-message.js"
+import { saveCachedCommit } from "../utils/cache.js"
+import { debug } from "../utils/debug.js"
 
 export interface CommitFlags {
-	retry: boolean;
-	auto: boolean;
-	agent: boolean;
-	message?: string;
-	hint?: string;
-	noCheck?: boolean;
+	retry: boolean
+	auto: boolean
+	agent: boolean
+	message?: string
+	hint?: string
+	noCheck?: boolean
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-step auto-group flow with sequential commits, review, and recovery
@@ -52,121 +52,121 @@ export async function runAutoGroupFlow(
 	flags: CommitFlags,
 ): Promise<RecoveryResult> {
 	// Step 1: Filter excluded files
-	const { included, excluded } = filterExcludedFiles(changedFiles);
+	const { included, excluded } = filterExcludedFiles(changedFiles)
 
 	// Step 1b: Commit excluded files with hardcoded message before grouping
 	if (excluded.length > 0) {
-		debug("Committing %d excluded files upfront:", excluded.length, excluded);
-		const message = buildExcludedFilesMessage(excluded);
+		debug("Committing %d excluded files upfront:", excluded.length, excluded)
+		const message = buildExcludedFilesMessage(excluded)
 
-		log.info(excluded.map((f) => `     ${f}`).join("\n"));
+		log.info(excluded.map((f) => `     ${f}`).join("\n"))
 
-		await resetStaging();
-		await stageFiles(excluded);
+		await resetStaging()
+		await stageFiles(excluded)
 
-		const headBefore = await getHead();
-		const commitResult = await attemptCommit(message);
-		const headAfter = await getHead();
+		const headBefore = await getHead()
+		const commitResult = await attemptCommit(message)
+		const headAfter = await getHead()
 
 		if (commitResult.ok || headBefore !== headAfter) {
-			debug("Excluded files committed:", message);
-			log.success(dim(message));
+			debug("Excluded files committed:", message)
+			log.success(dim(message))
 		} else {
-			debug("Excluded files commit failed, continuing without them");
-			log.warn(red("Failed to commit excluded files."));
+			debug("Excluded files commit failed, continuing without them")
+			log.warn(red("Failed to commit excluded files."))
 		}
 	}
 
 	// If only excluded files existed, we're done
 	if (included.length === 0) {
-		debug("No included files to group, done");
+		debug("No included files to group, done")
 		if (excluded.length > 0) {
-			outro(green("Committed excluded files. No other changes to group."));
+			outro(green("Committed excluded files. No other changes to group."))
 		} else {
-			outro(dim("Nothing to commit."));
+			outro(dim("Nothing to commit."))
 		}
-		return "committed";
+		return "committed"
 	}
 
 	// Run user-defined pre-commit checks upfront on all files (before AI grouping)
 	if (!flags.noCheck) {
-		const { getRepoRoot } = await import("../services/git.js");
-		const repoRoot = await getRepoRoot();
-		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path);
+		const { getRepoRoot } = await import("../services/git.js")
+		const repoRoot = await getRepoRoot()
+		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path)
 		// Only show check UI when a cmintrc config actually exists
-		const configPath = await detectConfig(repoRoot);
+		const configPath = await detectConfig(repoRoot)
 		if (configPath) {
-			debug("Running user checks on %d files...", allFiles.length);
-			const ck = spinner();
-			ck.start("Running checks...");
-			let checkResults = await runAllChecks(repoRoot, allFiles, 60000);
-			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length);
+			debug("Running user checks on %d files...", allFiles.length)
+			const ck = spinner()
+			ck.start("Running checks...")
+			let checkResults = await runAllChecks(repoRoot, allFiles, 60000)
+			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
 
 			while (!checkResults.ok) {
-				const failed = checkResults.results.filter((r) => !r.ok);
-				ck.stop(`${failed.length} check(s) failed`);
+				const failed = checkResults.results.filter((r) => !r.ok)
+				ck.stop(`${failed.length} check(s) failed`)
 				const rawOutput = failed
 					.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
-					.join("\n\n");
-				const checkErrors = parseCheckErrors(rawOutput);
+					.join("\n\n")
+				const checkErrors = parseCheckErrors(rawOutput)
 				const menuResult = await showCheckFailureMenu(checkErrors, rawOutput, async () => {
-					const retryResult = await runAllChecks(repoRoot, allFiles, 60000);
-					return retryResult.ok;
-				});
+					const retryResult = await runAllChecks(repoRoot, allFiles, 60000)
+					return retryResult.ok
+				})
 				if (menuResult === "cancelled") {
-					return "cancelled";
+					return "cancelled"
 				}
 				if (menuResult === "retried") {
-					debug("Re-running checks after retry...");
-					ck.start("Running checks...");
-					checkResults = await runAllChecks(repoRoot, allFiles, 60000);
+					debug("Re-running checks after retry...")
+					ck.start("Running checks...")
+					checkResults = await runAllChecks(repoRoot, allFiles, 60000)
 					debug(
 						"Retry check results: ok=%s, count=%d",
 						checkResults.ok,
 						checkResults.results.length,
-					);
-					continue;
+					)
+					continue
 				}
 				// "skipped" → continue to grouping and commits
-				break;
+				break
 			}
 
 			if (checkResults.ok) {
-				stopCheckSpinner(ck, checkResults);
+				stopCheckSpinner(ck, checkResults)
 			}
 		}
 	}
 
 	// Step 2: Read config and determine provider
-	const config = await readConfig();
-	const resolvedProvider = config.provider ?? "groq";
-	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq";
+	const config = await readConfig()
+	const resolvedProvider = config.provider ?? "groq"
+	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq"
 
 	// Step 3: Ensure API key
 	try {
-		await getProviderApiKey(provider);
-		debug("API key found");
+		await getProviderApiKey(provider)
+		debug("API key found")
 	} catch {
-		debug("No API key found, prompting user");
-		const { text: promptText } = await import("@clack/prompts");
+		debug("No API key found, prompting user")
+		const { text: promptText } = await import("@clack/prompts")
 		const key = await promptText({
 			message: `Enter your ${formatProviderName(provider)} API key:`,
 			placeholder: provider === "groq" ? "gsk_..." : "...",
 			validate: (v) => (v?.trim() ? undefined : "API key is required"),
-		});
+		})
 		if (isCancel(key)) {
-			outro(dim("Cancelled."));
-			return "cancelled";
+			outro(dim("Cancelled."))
+			return "cancelled"
 		}
-		const configKey = PROVIDER_ENV_KEYS[provider];
-		await setConfigValue(configKey, String(key).trim());
-		debug("API key saved to config");
+		const configKey = PROVIDER_ENV_KEYS[provider]
+		await setConfigValue(configKey, String(key).trim())
+		debug("API key saved to config")
 	}
 
 	// Step 4: Call grouping service
-	const s = spinner();
-	s.start("Analyzing files...");
-	const apiKey = await getProviderApiKey(provider);
+	const s = spinner()
+	s.start("Analyzing files...")
+	const apiKey = await getProviderApiKey(provider)
 	const result = await generateGroups(
 		included,
 		apiKey,
@@ -174,119 +174,119 @@ export async function runAutoGroupFlow(
 		config.timeout ? parseInt(config.timeout, 10) : undefined,
 		provider,
 		config.proxy,
-	);
-	const validatedGroups = validateGroups(result.groups, included);
-	s.stop("Files analyzed");
+	)
+	const validatedGroups = validateGroups(result.groups, included)
+	s.stop("Files analyzed")
 
-	showGroupedFiles(validatedGroups, included);
+	showGroupedFiles(validatedGroups, included)
 
 	// Step 5: Show grouping confirmation (skip in auto mode)
 	if (flags.auto) {
-		debug("Auto mode: skipping grouping confirmation");
+		debug("Auto mode: skipping grouping confirmation")
 	} else {
-		const confirmed = await showGroupingConfirmation(validatedGroups, excluded);
+		const confirmed = await showGroupingConfirmation(validatedGroups, excluded)
 		if (!confirmed) {
-			outro(dim("Cancelled."));
-			return "cancelled";
+			outro(dim("Cancelled."))
+			return "cancelled"
 		}
 	}
 
 	// Step 6: Sequential multi-commit loop
 	for (let i = 0; i < validatedGroups.length; i++) {
-		const group = validatedGroups[i];
-		showGroupProgress(i + 1, validatedGroups.length, group.name);
+		const group = validatedGroups[i]
+		showGroupProgress(i + 1, validatedGroups.length, group.name)
 
 		// Unstage everything first, then stage only this group's files
-		await resetStaging();
-		await stageFiles(group.files);
+		await resetStaging()
+		await stageFiles(group.files)
 
 		// Get diff for this group
-		const diffResult = await getStagedDiff();
+		const diffResult = await getStagedDiff()
 		if (!diffResult || "excludedFiles" in diffResult) {
-			log.warn(red(`No changes found for group "${group.name}" — skipping.`));
-			continue;
+			log.warn(red(`No changes found for group "${group.name}" — skipping.`))
+			continue
 		}
 
 		// Generate message
-		s.start("Generating commit message...");
-		let message: string;
+		s.start("Generating commit message...")
+		let message: string
 		try {
-			message = await generateMessage(diffResult.diff, flags.hint);
+			message = await generateMessage(diffResult.diff, flags.hint)
 		} catch (err) {
-			s.stop(red("Failed to generate message."));
-			outro(red(err instanceof Error ? err.message : String(err)));
-			return "cancelled";
+			s.stop(red("Failed to generate message."))
+			outro(red(err instanceof Error ? err.message : String(err)))
+			return "cancelled"
 		}
-		s.stop("Message generated");
-		log.info(dim(message));
+		s.stop("Message generated")
+		log.info(dim(message))
 
 		// Review message (skip in auto mode)
 		if (flags.auto) {
-			debug("Auto mode: accepting generated message");
+			debug("Auto mode: accepting generated message")
 		} else {
-			const reviewed = await reviewCommitMessage(message);
+			const reviewed = await reviewCommitMessage(message)
 			if (reviewed === null) {
-				outro(dim("Cancelled."));
-				return "cancelled";
+				outro(dim("Cancelled."))
+				return "cancelled"
 			}
-			message = reviewed;
+			message = reviewed
 		}
 
 		// Cache message
-		const { getRepoRoot } = await import("../services/git.js");
-		const repoRoot = await getRepoRoot();
-		await saveCachedCommit(repoRoot, message);
+		const { getRepoRoot } = await import("../services/git.js")
+		const repoRoot = await getRepoRoot()
+		await saveCachedCommit(repoRoot, message)
 
 		// Attempt commit
-		s.start("Running pre-commit hooks...");
-		const headBefore = await getHead();
-		const commitResult = await attemptCommit(message, [], createProgressHandler(s));
-		const headAfter = await getHead();
+		s.start("Running pre-commit hooks...")
+		const headBefore = await getHead()
+		const commitResult = await attemptCommit(message, [], createProgressHandler(s))
+		const headAfter = await getHead()
 
 		if (commitResult.ok || headBefore !== headAfter) {
-			s.stop("Committed successfully.");
-			const checks = parseToolChecks(commitResult.stderr ?? "");
+			s.stop("Committed successfully.")
+			const checks = parseToolChecks(commitResult.stderr ?? "")
 			if (checks.length > 0) {
-				const lines = checks.map((c) => `  ${c.ok ? green("✓") : red("✗")} ${c.tool}`);
-				log.info(lines.join("\n"));
+				const lines = checks.map((c) => `  ${c.ok ? green("✓") : red("✗")} ${c.tool}`)
+				log.info(lines.join("\n"))
 			}
-			continue;
+			continue
 		}
 
 		// Hook failure — stop sequence, show recovery menu
-		s.stop("Commit failed.");
-		const errors = parseHookErrors(commitResult.stderr ?? "");
+		s.stop("Commit failed.")
+		const errors = parseHookErrors(commitResult.stderr ?? "")
 		const recoveryResult = await showRecoveryMenu(
 			errors,
 			async () => (await attemptCommit(message)).ok,
 			async (msg) => (await attemptCommitNoVerify(msg)).ok,
 			async () => {
-				await stageFiles(group.files);
-				return (await attemptCommit(message)).ok;
+				await stageFiles(group.files)
+				return (await attemptCommit(message)).ok
 			},
 			message,
 			commitResult.stderr ?? "",
-		);
+		)
 		if (recoveryResult === "committed") {
 			if (i < validatedGroups.length - 1) {
-				continue;
+				continue
 			}
-			return "committed";
+			return "committed"
 		}
-		return recoveryResult;
+		return recoveryResult
 	}
 
-	outro(green("All groups committed."));
-	return "committed";
+	outro(green("All groups committed."))
+	return "committed"
 }
 
 export async function generateMessage(diff: string, hint?: string): Promise<string> {
-	const config = await readConfig();
-	const resolvedProvider = config.provider ?? "groq";
-	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq";
-	const apiKey = await getProviderApiKey(provider);
-	const model = getModelForProvider(config, provider, PROVIDER_CONFIGS[provider].defaultModel);
-	debug("Generating message with provider:", provider, "model:", model, "type:", config.type);
+	const config = await readConfig()
+	const resolvedProvider = config.provider ?? "groq"
+	const provider: ProviderName = isValidProvider(resolvedProvider) ? resolvedProvider : "groq"
+	const apiKey = await getProviderApiKey(provider)
+	const model = getModelForProvider(config, provider, PROVIDER_CONFIGS[provider].defaultModel)
+	debug("Generating message with provider:", provider, "model:", model, "type:", config.type)
 
 	return generateCommitMessage(diff, {
 		apiKey,
@@ -296,22 +296,22 @@ export async function generateMessage(diff: string, hint?: string): Promise<stri
 		hint,
 		provider,
 		proxy: config.proxy,
-	});
+	})
 }
 
 export function buildExcludedFilesMessage(files: string[]): string {
-	const excludes = getDefaultExcludes();
+	const excludes = getDefaultExcludes()
 	const isLockfile = (f: string) =>
 		excludes.some((pattern) => {
 			if (pattern.endsWith(".lock") || pattern.endsWith(".json")) {
-				return f === pattern || f.endsWith(pattern.replace("*.", "."));
+				return f === pattern || f.endsWith(pattern.replace("*.", "."))
 			}
-			return false;
-		});
+			return false
+		})
 
 	if (files.every(isLockfile)) {
-		return "chore: update lockfile";
+		return "chore: update lockfile"
 	}
 
-	return "chore: update generated files";
+	return "chore: update generated files"
 }

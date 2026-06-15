@@ -12,6 +12,11 @@
 		"indentStyle": "tab",
 		"lineWidth": 100
 	},
+	"javascript": {
+		"formatter": {
+			"semicolons": "asNeeded"
+		}
+	},
 	"linter": {
 		"enabled": true,
 		"rules": {

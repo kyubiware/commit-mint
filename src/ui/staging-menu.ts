@@ -1,11 +1,11 @@
-import * as p from "@clack/prompts";
-import { bold, cyan, dim, green, red, yellow } from "kolorist";
-import type { ChangedFile } from "../services/git.js";
-import { debug } from "../utils/debug.js";
+import * as p from "@clack/prompts"
+import { bold, cyan, dim, green, red, yellow } from "kolorist"
+import type { ChangedFile } from "../services/git.js"
+import { debug } from "../utils/debug.js"
 
 export interface StagingChoice {
-	files: string[]; // selected file paths to stage
-	all: boolean; // whether user chose "Stage all"
+	files: string[] // selected file paths to stage
+	all: boolean // whether user chose "Stage all"
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Staging menu with conditional options + multiselect fallback
@@ -14,49 +14,49 @@ export async function showStagingMenu(
 	files: ChangedFile[],
 	hasChecks: boolean,
 ): Promise<StagingChoice | "autogroup" | "checks" | "staged" | null> {
-	debug("showStagingMenu: %d files", files.length);
+	debug("showStagingMenu: %d files", files.length)
 
 	// Build status labels with kolorist colors
 	const statusLabel = (status: string): string => {
 		switch (status) {
 			case "M":
-				return yellow("M");
+				return yellow("M")
 			case "A":
-				return green("A");
+				return green("A")
 			case "D":
-				return red("D");
+				return red("D")
 			case "?":
 			case "??":
-				return cyan("?");
+				return cyan("?")
 			default:
-				return dim(status);
+				return dim(status)
 		}
-	};
+	}
 
 	// Sort: staged files first, then unstaged
 	const sorted = [...files].sort((a, b) => {
-		if (a.staged !== b.staged) return a.staged ? -1 : 1;
-		return a.path.localeCompare(b.path);
-	});
+		if (a.staged !== b.staged) return a.staged ? -1 : 1
+		return a.path.localeCompare(b.path)
+	})
 
 	// Show file list grouped by staged status
-	const stagedFiles = sorted.filter((f) => f.staged);
-	const unstagedFiles = sorted.filter((f) => !f.staged);
-	const lines: string[] = [];
+	const stagedFiles = sorted.filter((f) => f.staged)
+	const unstagedFiles = sorted.filter((f) => !f.staged)
+	const lines: string[] = []
 	if (stagedFiles.length > 0) {
 		lines.push(
 			green(bold("Staged:")),
 			...stagedFiles.map((f) => `  ${statusLabel(f.status)}  ${f.path}`),
-		);
+		)
 	}
 	if (unstagedFiles.length > 0) {
-		if (lines.length > 0) lines.push("");
+		if (lines.length > 0) lines.push("")
 		lines.push(
 			yellow(bold("Changed:")),
 			...unstagedFiles.map((f) => `  ${statusLabel(f.status)}  ${f.path}`),
-		);
+		)
 	}
-	p.note(lines.join("\n"), `${files.length} file${files.length !== 1 ? "s" : ""}`);
+	p.note(lines.join("\n"), `${files.length} file${files.length !== 1 ? "s" : ""}`)
 
 	const choice = await p.select({
 		message: "Stage files for commit:",
@@ -92,26 +92,26 @@ export async function showStagingMenu(
 			{ label: "Select files...", value: "select" },
 			{ label: "Cancel", value: "cancel" },
 		],
-	});
+	})
 
 	if (p.isCancel(choice) || choice === "cancel") {
-		return null;
+		return null
 	}
 
 	if (choice === "autogroup") {
-		return "autogroup";
+		return "autogroup"
 	}
 
 	if (choice === "checks") {
-		return "checks";
+		return "checks"
 	}
 
 	if (choice === "staged") {
-		return "staged";
+		return "staged"
 	}
 
 	if (choice === "all") {
-		return { files: files.map((f) => f.path), all: true };
+		return { files: files.map((f) => f.path), all: true }
 	}
 
 	// Multi-select
@@ -122,11 +122,11 @@ export async function showStagingMenu(
 			value: f.path,
 		})),
 		required: true,
-	});
+	})
 
 	if (p.isCancel(selected)) {
-		return null;
+		return null
 	}
 
-	return { files: selected as string[], all: false };
+	return { files: selected as string[], all: false }
 }

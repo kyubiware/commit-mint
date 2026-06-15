@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-import { debug } from "../utils/debug.js";
+import { spawn } from "node:child_process"
+import { debug } from "../utils/debug.js"
 
 /** Milliseconds to wait after stdin closes for quick exit failures. */
-const GRACE_PERIOD_MS = 150;
+const GRACE_PERIOD_MS = 150
 
 export async function copyToClipboard(content: string): Promise<boolean> {
 	const commands: [string, string[]][] = [
@@ -10,15 +10,15 @@ export async function copyToClipboard(content: string): Promise<boolean> {
 		["xclip", ["-selection", "clipboard"]],
 		["xsel", ["--clipboard", "--input"]],
 		["pbcopy", []],
-	];
+	]
 
 	for (const [cmd, args] of commands) {
 		try {
-			const success = await tryCopy(cmd, args, content);
-			if (success) return true;
+			const success = await tryCopy(cmd, args, content)
+			if (success) return true
 		} catch {}
 	}
-	return false;
+	return false
 }
 
 /**
@@ -41,70 +41,70 @@ function handleGracePeriod(
 	child: ReturnType<typeof spawn>,
 	done: (result: boolean, reason?: string) => void,
 ) {
-	if (settled) return;
+	if (settled) return
 
 	if (exitCode !== null) {
 		if (exitCode === 0) {
-			done(true, "exited 0");
+			done(true, "exited 0")
 		} else {
-			const stderr = Buffer.concat(stderrChunks).toString().trim();
-			done(false, `exit ${exitCode}${stderr ? `: ${stderr}` : ""}`);
+			const stderr = Buffer.concat(stderrChunks).toString().trim()
+			done(false, `exit ${exitCode}${stderr ? `: ${stderr}` : ""}`)
 		}
-		return;
+		return
 	}
 
 	// Child still alive — assume success. Clipboard tools
 	// (xclip, wl-copy) hold the selection open, so they
 	// don't exit until something else takes the clipboard.
-	child.unref();
-	done(true);
+	child.unref()
+	done(true)
 }
 
 function tryCopy(cmd: string, args: string[], content: string): Promise<boolean> {
 	return new Promise<boolean>((resolve) => {
-		debug("clipboard: trying %s", cmd);
+		debug("clipboard: trying %s", cmd)
 
 		const child = spawn(cmd, args, {
 			stdio: ["pipe", "ignore", "pipe"],
-		});
+		})
 
-		let settled = false;
-		const stderrChunks: Buffer[] = [];
+		let settled = false
+		const stderrChunks: Buffer[] = []
 
 		child.stderr?.on("data", (chunk: Buffer) => {
-			stderrChunks.push(chunk);
-		});
+			stderrChunks.push(chunk)
+		})
 
 		const done = (result: boolean, reason?: string) => {
-			if (settled) return;
-			settled = true;
-			debug("clipboard: %s %s%s", cmd, result ? "ok" : "failed", reason ? ` (${reason})` : "");
-			resolve(result);
-		};
+			if (settled) return
+			settled = true
+			debug("clipboard: %s %s%s", cmd, result ? "ok" : "failed", reason ? ` (${reason})` : "")
+			resolve(result)
+		}
 
 		// Command not found (ENOENT)
 		child.on("error", (err) => {
-			done(false, err.message);
-		});
+			done(false, err.message)
+		})
 
 		// Track exit for grace-period detection
-		let exitCode: number | null = null;
+		let exitCode: number | null = null
 		child.on("exit", (code) => {
-			exitCode = code;
-		});
+			exitCode = code
+		})
 
 		child.stdin.write(content, (err) => {
 			if (err) {
-				done(false, "stdin write error");
-				return;
+				done(false, "stdin write error")
+				return
 			}
 			child.stdin.end(() => {
 				// stdin closed — start grace period to detect quick failures
 				setTimeout(
 					() => handleGracePeriod(settled, exitCode, stderrChunks, child, done),
 					GRACE_PERIOD_MS,
-				);
-			});
-		});
-	});
+				)
+			})
+		})
+	})
 }

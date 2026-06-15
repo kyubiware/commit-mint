@@ -1,24 +1,24 @@
-let agentMode = false;
+let agentMode = false
 
 export function setAgentMode(value: boolean): void {
-	agentMode = value;
+	agentMode = value
 }
 
 export function isAgentMode(): boolean {
-	return agentMode;
+	return agentMode
 }
 
 export interface AgentCommit {
-	message: string;
-	hash: string;
-	files: string[];
-	groupName?: string;
+	message: string
+	hash: string
+	files: string[]
+	groupName?: string
 }
 
 export interface AgentResult {
-	status: "success" | "failure" | "no_changes" | "cancelled";
-	commits: AgentCommit[];
-	errors?: string[];
+	status: "success" | "failure" | "no_changes" | "cancelled"
+	commits: AgentCommit[]
+	errors?: string[]
 }
 
 export const EXIT_CODES = {
@@ -29,8 +29,8 @@ export const EXIT_CODES = {
 	AI: 4,
 	CHECK: 5,
 	HOOK: 6,
-} as const;
+} as const
 
 export function writeAgentResult(result: AgentResult): void {
-	process.stdout.write(`${JSON.stringify(result)}\n`);
+	process.stdout.write(`${JSON.stringify(result)}\n`)
 }
