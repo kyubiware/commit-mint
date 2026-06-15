@@ -8,6 +8,7 @@ import { agentCommand } from "./commands/agent.js"
 import { commitCommand } from "./commands/commit.js"
 import { configCommand } from "./commands/config.js"
 import { logsCommand } from "./commands/logs.js"
+import { checkForUpdates } from "./services/update-check.js"
 import { setAgentMode } from "./utils/agent.js"
 import { setDebug, writeSessionHeader } from "./utils/debug.js"
 
@@ -87,6 +88,7 @@ cli(
 			setAgentMode(true)
 			agentCommand(argv.flags)
 		} else {
+			checkForUpdates(version)
 			commitCommand(argv.flags)
 		}
 	},
