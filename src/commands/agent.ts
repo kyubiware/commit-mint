@@ -31,19 +31,6 @@ import { debug } from "../utils/debug.js";
 import { buildExcludedFilesMessage, type CommitFlags } from "./auto-group.js";
 
 /**
- * Wrapper around getHead() that returns "" on fresh repos with no commits.
- * `git rev-parse HEAD` fails with exit 128 on a brand-new repo, which would
- * crash the agent flow before the first commit can be made.
- */
-async function safeGetHead(): Promise<string> {
-	try {
-		return await getHead();
-	} catch {
-		return "";
-	}
-}
-
-/**
  * Headless agent command — orchestrates the entire commit flow without any TUI
  * interaction. Emits structured JSON results to stdout, one per line. Returns
  * control to the caller with `process.exitCode` set to one of the 7 documented
@@ -105,15 +92,15 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 		debug("All staged files are excluded:", diffResult.excludedFiles);
 		const message = buildExcludedFilesMessage(diffResult.excludedFiles);
 
-		const headBefore = await safeGetHead();
+		const headBefore = await getHead();
 		const result = await attemptCommit(message);
-		const headAfter = await safeGetHead();
+		const headAfter = await getHead();
 
 		if (result.ok || headBefore !== headAfter) {
 			process.exitCode = EXIT_CODES.SUCCESS;
 			writeAgentResult({
 				status: "success",
-				commits: [{ message, hash: headAfter, files: diffResult.excludedFiles }],
+				commits: [{ message, hash: headAfter ?? "", files: diffResult.excludedFiles }],
 			});
 		} else {
 			process.exitCode = EXIT_CODES.HOOK;
@@ -130,15 +117,15 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 	// 6. Handle --message (single-commit mode: skip AI + auto-group)
 	if (flags.message) {
 		debug("Using provided message:", flags.message);
-		const headBefore = await safeGetHead();
+		const headBefore = await getHead();
 		const result = await attemptCommit(flags.message);
-		const headAfter = await safeGetHead();
+		const headAfter = await getHead();
 
 		if (result.ok || headBefore !== headAfter) {
 			process.exitCode = EXIT_CODES.SUCCESS;
 			writeAgentResult({
 				status: "success",
-				commits: [{ message: flags.message, hash: headAfter, files: diffResult.files }],
+				commits: [{ message: flags.message, hash: headAfter ?? "", files: diffResult.files }],
 			});
 		} else {
 			process.exitCode = EXIT_CODES.HOOK;
@@ -186,9 +173,9 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 		await resetStaging();
 		await stageFiles(excluded);
 
-		const headBefore = await safeGetHead();
+		const headBefore = await getHead();
 		const result = await attemptCommit(message);
-		const headAfter = await safeGetHead();
+		const headAfter = await getHead();
 		if (!result.ok && headBefore === headAfter) {
 			debug("Excluded files commit failed, continuing without them");
 		}
@@ -284,12 +271,12 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 		await saveCachedCommit(repoRoot, message);
 
 		// Attempt commit (no recovery menu in agent mode)
-		const headBefore = await safeGetHead();
+		const headBefore = await getHead();
 		const result = await attemptCommit(message);
-		const headAfter = await safeGetHead();
+		const headAfter = await getHead();
 
 		if (result.ok || headBefore !== headAfter) {
-			commits.push({ message, hash: headAfter, files: group.files, groupName: group.name });
+			commits.push({ message, hash: headAfter ?? "", files: group.files, groupName: group.name });
 			continue;
 		}
 
