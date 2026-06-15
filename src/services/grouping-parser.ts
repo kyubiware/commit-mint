@@ -102,17 +102,19 @@ export function parseGroupingResponse(content: string): CommitGroup[] {
 		.trim();
 
 	// Path 1: extract the outermost JSON array — handles text before/after the array,
-	// markdown fences, and trailing explanation prose.
+	// markdown fences, and trailing explanation prose. A truly empty array ("[]")
+	// returns [] — the caller treats that as a low-quality result that triggers a
+	// retry. If the array had items but none coerced to groups, fall through to
+	// Path 2 so the object scan can attempt recovery.
 	const start = cleaned.indexOf("[");
 	const end = cleaned.lastIndexOf("]");
 	if (start !== -1 && end !== -1 && end > start) {
 		try {
 			const parsed = JSON.parse(cleaned.slice(start, end + 1)) as unknown;
 			if (Array.isArray(parsed)) {
+				if (parsed.length === 0) return [];
 				const groups = parsed.map(coerceGroup).filter((g): g is CommitGroup => g !== null);
-				if (groups.length > 0) {
-					return groups;
-				}
+				if (groups.length > 0) return groups;
 			}
 		} catch {
 			// Array span didn't parse (e.g. concatenated objects confuse the [ ] slice).

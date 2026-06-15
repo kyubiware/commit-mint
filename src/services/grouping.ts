@@ -183,8 +183,11 @@ export async function generateGroups(
 		let validated = validateGroups(rawGroups, included);
 		debug("generateGroups: %d validated groups", validated.length);
 
-		// Retry once if grouping quality is low (single catch-all group)
-		if (isLowQualityGrouping(validated, included)) {
+		// Retry once if grouping quality is low. Evaluate against the raw AI result:
+		// validateGroups() silently adds an "Other changes" group for any ungrouped
+		// files, which would mask an empty model response (turning [] into a single
+		// catch-all) and skip the retry the user needs.
+		if (isLowQualityGrouping(rawGroups, included)) {
 			debug("generateGroups: low quality result, retrying with stricter prompt");
 			const retryPrompt = buildRetryGroupingPrompt();
 			rawGroups = await callGroupingAI(client, resolvedModel, retryPrompt, userPrompt);
@@ -239,7 +242,11 @@ async function callGroupingAI(
 const MIN_FILES_FOR_QUALITY_CHECK = 5;
 
 export function isLowQualityGrouping(groups: CommitGroup[], allFiles: ChangedFile[]): boolean {
-	if (groups.length === 0) return false;
+	// No files to group → empty grouping is the correct result, not low quality.
+	if (allFiles.length === 0) return false;
+	// Files were provided but the model returned no groups — retry once before
+	// falling back to "Other changes" so the user still gets a sensible commit.
+	if (groups.length === 0) return true;
 	if (allFiles.length < MIN_FILES_FOR_QUALITY_CHECK) return false;
 	return groups.length === 1;
 }

@@ -351,6 +351,20 @@ describe("parseGroupingResponse", () => {
 	it("throws when no JSON array found", () => {
 		expect(() => parseGroupingResponse("No JSON here at all")).toThrow();
 	});
+
+	it("returns empty array when model explicitly returned '[]'", () => {
+		// Contract: a valid empty array parses successfully and returns []. The caller
+		// decides whether empty is acceptable (treated as low quality → retry).
+		// Throwing here would conflate "unparseable" with "parsed but empty."
+		const result = parseGroupingResponse("[]");
+		expect(result).toEqual([]);
+	});
+
+	it("still throws when array contains only non-group items", () => {
+		// Items present but none match the CommitGroup shape — this is genuinely
+		// unparseable, not an empty-array case. Path 2 object scan also gets nothing.
+		expect(() => parseGroupingResponse('["just a string"]')).toThrow();
+	});
 });
 
 describe("isLowQualityGrouping", () => {
@@ -433,6 +447,16 @@ describe("isLowQualityGrouping", () => {
 
 	it("does not flag empty groups", () => {
 		expect(isLowQualityGrouping([], [])).toBe(false);
+	});
+
+	it("flags empty grouping as low quality when files were provided", () => {
+		// The model returned no groups for files that need grouping. Retry before
+		// falling back to a single "Other changes" commit.
+		const files: ChangedFile[] = [
+			{ status: "??", path: "AGENTS.md", staged: false },
+			{ status: "??", path: "index.html", staged: false },
+		];
+		expect(isLowQualityGrouping([], files)).toBe(true);
 	});
 });
 
@@ -560,5 +584,60 @@ describe("generateGroups", () => {
 		expect(mockChatCreate).toHaveBeenCalledTimes(2);
 		// But still returns the result (no infinite retry)
 		expect(result.groups).toHaveLength(1);
+	});
+
+	it("retries once when AI returns an empty array, then succeeds on retry", async () => {
+		// Repro: mistral-small sometimes returns `[]` instead of grouping the files.
+		// cmint should treat this like a low-quality result and retry with a stricter prompt.
+		const files = makeFiles(2);
+		const mockChatCreate = vi.fn();
+
+		// First call: model returns empty array
+		mockChatCreate.mockResolvedValueOnce({
+			choices: [{ message: { content: "[]" } }],
+		});
+		// Second call (retry): model returns a valid grouping
+		mockChatCreate.mockResolvedValueOnce({
+			choices: [
+				{
+					message: {
+						content: makeAIResponse([{ name: "Changes", files: files.map((f) => f.path) }]),
+					},
+				},
+			],
+		});
+
+		mockCreateProvider.mockReturnValue({
+			client: { chat: { completions: { create: mockChatCreate } } },
+			model: "test-model",
+		});
+
+		const result = await generateGroups(files, "test-key");
+
+		expect(mockChatCreate).toHaveBeenCalledTimes(2);
+		expect(result.groups).toHaveLength(1);
+	});
+
+	it("falls back to a single 'Other changes' group when retry also returns empty", async () => {
+		// Both calls return [] — no infinite retry. validateGroups() rescues the
+		// situation by bundling all files into "Other changes" so the user still
+		// gets a commit instead of a crash.
+		const files = makeFiles(2);
+		const mockChatCreate = vi.fn();
+		mockChatCreate.mockResolvedValue({
+			choices: [{ message: { content: "[]" } }],
+		});
+
+		mockCreateProvider.mockReturnValue({
+			client: { chat: { completions: { create: mockChatCreate } } },
+			model: "test-model",
+		});
+
+		const result = await generateGroups(files, "test-key");
+
+		expect(mockChatCreate).toHaveBeenCalledTimes(2);
+		expect(result.groups).toHaveLength(1);
+		expect(result.groups[0].name).toBe("Other changes");
+		expect(result.groups[0].files).toEqual(files.map((f) => f.path));
 	});
 });
