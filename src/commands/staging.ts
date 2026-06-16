@@ -141,13 +141,15 @@ export async function runPreCommitChecks(
 
 /**
  * Re-stage staged files whose working-tree content diverged from the index after checks ran.
- * Signal: a file with both index and working-tree modifications has git status "MM".
+ * Signals (git status --short, 2-char XY code):
+ *   "MM" — tracked file staged-modified, then reformatted on disk
+ *   "AM" — newly-added file staged, then reformatted on disk
  */
 async function restageFormatterModifications(stagedFileList: string[]): Promise<void> {
 	const checkedSet = new Set(stagedFileList)
 	const postCheckFiles = await getChangedFiles()
 	const modifiedByChecks = postCheckFiles
-		.filter((f) => checkedSet.has(f.path) && f.staged && f.status === "MM")
+		.filter((f) => checkedSet.has(f.path) && f.staged && (f.status === "MM" || f.status === "AM"))
 		.map((f) => f.path)
 	if (modifiedByChecks.length === 0) return
 	debug("Re-staging %d file(s) modified by checks", modifiedByChecks.length)

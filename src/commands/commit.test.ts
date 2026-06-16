@@ -552,4 +552,49 @@ describe("commitCommand check integration", () => {
 		// Only the formatter-modified file is re-staged; bar.ts is untouched
 		expect(stageFiles).toHaveBeenCalledWith(["src/foo.ts"])
 	})
+
+	it("re-stages newly-added files (AM status) reformatted by checks", async () => {
+		// Two untracked files → staging menu → "stage all" stages them (status A),
+		// then a formatter modifies src/new.ts on disk → status transitions to "AM".
+		// restageFormatterModifications must catch AM, not just MM.
+		vi.mocked(getStatusShort).mockResolvedValue("?? src/new.ts\n?? src/other.ts")
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/new.ts", "src/other.ts"],
+			all: true,
+		})
+		vi.mocked(stageAll).mockResolvedValue(undefined)
+		vi.mocked(stageFiles).mockResolvedValue(undefined)
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key")
+		vi.mocked(readConfig).mockResolvedValue({ model: "openai/gpt-oss-20b", locale: "en" })
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test")
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true })
+		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456")
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["src/new.ts", "src/other.ts"],
+			diff: "some diff",
+		})
+		// Untracked → staged-add → formatter modifies one → AM
+		vi.mocked(getChangedFiles)
+			// call 1 — initial scan: both untracked
+			.mockResolvedValueOnce([
+				{ status: "??", path: "src/new.ts", staged: false },
+				{ status: "??", path: "src/other.ts", staged: false },
+			])
+			// call 2 — after stageAll: both added to index
+			.mockResolvedValueOnce([
+				{ status: "A", path: "src/new.ts", staged: true },
+				{ status: "A", path: "src/other.ts", staged: true },
+			])
+			// call 3 — after checks: new.ts reformatted on disk (AM), other.ts clean (A)
+			.mockResolvedValueOnce([
+				{ status: "AM", path: "src/new.ts", staged: true },
+				{ status: "A", path: "src/other.ts", staged: true },
+			])
+
+		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
+
+		// The formatter-modified newly-added file must be re-staged
+		expect(stageFiles).toHaveBeenCalledWith(["src/new.ts"])
+	})
 })
