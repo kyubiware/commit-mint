@@ -313,7 +313,7 @@ describe("nag display", () => {
 		const message = warnSpy.mock.calls[0][0] as string
 		expect(message).toMatch(/0\.6\.6/)
 		expect(message).toMatch(/1\.0\.0/)
-		expect(message).toMatch(/npm update -g @kyubiware\/commit-mint/)
+		expect(message).toMatch(/cmint update/)
 	})
 
 	it("does not call log.warn when nag is suppressed", async () => {

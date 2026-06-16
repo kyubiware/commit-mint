@@ -12,7 +12,7 @@ import { debug } from "../utils/debug.js"
 // `version`, not `latest`), so it can't be used here without changing the
 // parser. The `/-/package/` prefix works for both scoped and unscoped names.
 const REGISTRY_URL = "https://registry.npmjs.org/-/package/@kyubiware/commit-mint/dist-tags"
-const PACKAGE_NAME = "@kyubiware/commit-mint"
+const _PACKAGE_NAME = "@kyubiware/commit-mint"
 const TTL_MS = 24 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 5000
 
@@ -149,7 +149,7 @@ function displayNag(current: string, latest: string): void {
 	debug("displayNag: %s → %s", current, latest)
 	const message =
 		`Update available: ${yellow(current)} → ${green(latest)}\n` +
-		`Run ${cyan(`npm update -g ${PACKAGE_NAME}`)} to update`
+		`Run ${cyan("cmint update")} to update`
 	log.warn(message)
 }
 
@@ -172,6 +172,11 @@ export type UpdateCheckStatus =
  * {@link checkForUpdatesUpfront}. Accepts an optional AbortSignal that
  * propagates to the underlying fetch — used by the cancellable spinner.
  *
+ * When an update is available, {@link onNag} is invoked (defaulting to
+ * {@link displayNag}). The cancellable spinner path passes a capturing
+ * callback so it can stop the spinner BEFORE the nag prints — otherwise
+ * `log.warn` interleaves with the spinner line and leaves it on screen.
+ *
  * Returns an {@link UpdateCheckStatus} so the caller can distinguish a
  * real fetch that found the user current (eligible for "You are on the
  * latest version" feedback) from a silent cache hit.
@@ -179,6 +184,7 @@ export type UpdateCheckStatus =
 export async function runUpdateCheck(
 	currentVersion: string,
 	parentSignal?: AbortSignal,
+	onNag: (current: string, latest: string) => void = displayNag,
 ): Promise<UpdateCheckStatus> {
 	debug("runUpdateCheck: currentVersion=%s", currentVersion)
 	if (shouldSkip(currentVersion)) {
@@ -192,7 +198,7 @@ export async function runUpdateCheck(
 		if (cached && Date.now() - cached.checkedAt < TTL_MS) {
 			debug("runUpdateCheck: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
 			if (semver.gt(cached.latest, currentVersion)) {
-				displayNag(currentVersion, cached.latest)
+				onNag(currentVersion, cached.latest)
 				return "cache-update"
 			}
 			debug("runUpdateCheck: current >= latest, no nag")
@@ -210,7 +216,7 @@ export async function runUpdateCheck(
 		}
 		await saveCache({ latest, checkedAt: Date.now() })
 		if (semver.gt(latest, currentVersion)) {
-			displayNag(currentVersion, latest)
+			onNag(currentVersion, latest)
 			return "fetch-update"
 		}
 		debug("runUpdateCheck: current >= latest, no nag")
@@ -371,9 +377,16 @@ async function runCheckWithSpinner(currentVersion: string): Promise<void> {
 		return
 	}
 
+	// Capture the nag instead of printing it immediately. The spinner MUST be
+	// stopped before any log output, otherwise clack leaves the spinner line
+	// on screen (log.warn interleaves with the animated spinner). Wrapped in
+	// a const object so TS doesn't narrow through the callback closure.
+	const captured: { nag: { current: string; latest: string } | null } = { nag: null }
 	let status: UpdateCheckStatus
 	try {
-		status = await runUpdateCheck(currentVersion, controller.signal)
+		status = await runUpdateCheck(currentVersion, controller.signal, (current, latest) => {
+			captured.nag = { current, latest }
+		})
 	} finally {
 		handler.cleanup()
 	}
@@ -383,8 +396,9 @@ async function runCheckWithSpinner(currentVersion: string): Promise<void> {
 		s.stop("Skipped")
 	} else if (status === "fetch-current") {
 		s.stop(green("You are on the latest version"))
-	} else if (status === "fetch-update") {
-		s.stop("") // nag already shown via log.warn inside runUpdateCheck
+	} else if (status === "fetch-update" || status === "cache-update") {
+		s.stop("")
+		if (captured.nag) displayNag(captured.nag.current, captured.nag.latest)
 	} else if (status === "fetch-failed-or-aborted") {
 		s.stop("Update check failed")
 	} else {
