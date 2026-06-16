@@ -180,7 +180,21 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 	}
 
 	// Review message (with optional code review)
-	const reviewed = await reviewCommitMessage(message)
+	const reviewed = await reviewCommitMessage(message, {
+		regenerate: async (hint) => {
+			const combinedHint = flags.hint ? `${flags.hint}\n${hint}` : hint
+			debug("Regenerating with combined hint:", combinedHint)
+			s.start("Regenerating commit message...")
+			try {
+				const newMessage = await generateMessage(diffResult.diff, combinedHint)
+				s.stop("Message regenerated")
+				return newMessage
+			} catch (err) {
+				s.stop(red("Regeneration failed"))
+				throw err
+			}
+		},
+	})
 	if (reviewed === null) {
 		outro(dim("Cancelled."))
 		return
