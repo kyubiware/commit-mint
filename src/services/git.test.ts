@@ -294,10 +294,10 @@ describe("getChangedFiles", () => {
 		expect(result).toEqual([{ status: "M", path: "src/commands/commit.ts", staged: false }])
 	})
 
-	it("calls git status --short", async () => {
+	it("calls git status --short with --untracked-files=all", async () => {
 		mockExeca.mockResolvedValue({ stdout: "" })
 		await getChangedFiles()
-		expect(mockExeca).toHaveBeenCalledWith("git", ["status", "--short"])
+		expect(mockExeca).toHaveBeenCalledWith("git", ["status", "--short", "--untracked-files=all"])
 	})
 })
 
