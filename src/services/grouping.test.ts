@@ -221,6 +221,47 @@ describe("validateGroups", () => {
 		expect(result[0].name).toBe("Other changes")
 		expect(result[0].files).toEqual(["src/real.ts"])
 	})
+
+	it("reunites a split impl+test pair through validateGroups pipeline", () => {
+		// The exact UX failure from the bug report: AI split impl, test, and docs
+		// into three groups. validateGroups should fold the test back into the
+		// impl group, leaving docs as its own group.
+		const allFiles: ChangedFile[] = [
+			{ status: "M", path: "src/services/git.ts", staged: true },
+			{ status: "M", path: "src/services/git.test.ts", staged: true },
+			{ status: "M", path: "README.md", staged: true },
+		]
+
+		const groups = [
+			{
+				name: "Update Git service implementation",
+				description: "impl",
+				files: ["src/services/git.ts"],
+			},
+			{
+				name: "Add tests for Git service changes",
+				description: "tests",
+				files: ["src/services/git.test.ts"],
+			},
+			{
+				name: "Update project documentation",
+				description: "docs",
+				files: ["README.md"],
+			},
+		]
+
+		const result = validateGroups(groups, allFiles)
+
+		expect(result).toHaveLength(2)
+		const implGroup = result.find((g) => g.name === "Update Git service implementation")
+		const docsGroup = result.find((g) => g.name === "Update project documentation")
+		expect(implGroup).toBeDefined()
+		expect(docsGroup).toBeDefined()
+		expect(implGroup?.files).toEqual(["src/services/git.ts", "src/services/git.test.ts"])
+		expect(docsGroup?.files).toEqual(["README.md"])
+		// The standalone test group should be dropped (it's now empty).
+		expect(result.find((g) => g.name === "Add tests for Git service changes")).toBeUndefined()
+	})
 })
 
 describe("parseGroupingResponse", () => {
@@ -470,6 +511,23 @@ describe("buildGroupingSystemPrompt", () => {
 	it("includes rule to keep related files together", () => {
 		const prompt = buildGroupingSystemPrompt()
 		expect(prompt).toContain("Keep related files together")
+	})
+
+	it("puts the test/source rule first and makes it unconditional", () => {
+		// The prior prompt had "Keep related files together (e.g., a component
+		// + its test...)" as a soft hint. After the field failure where the AI
+		// split git.ts and git.test.ts, the rule must lead with an explicit,
+		// unconditional "ALWAYS keep" + concrete examples.
+		const prompt = buildGroupingSystemPrompt()
+		expect(prompt).toMatch(/ALWAYS keep a test file in the same group/)
+		expect(prompt).toContain("foo.test.ts")
+		expect(prompt).toContain("foo.ts")
+		// Test/source rule must come before the docs-separation rule so the AI
+		// reads it first.
+		const testRuleIdx = prompt.search(/ALWAYS keep a test file/)
+		const docsRuleIdx = prompt.search(/Separate documentation/i)
+		expect(testRuleIdx).toBeGreaterThan(-1)
+		expect(docsRuleIdx).toBeGreaterThan(testRuleIdx)
 	})
 })
 

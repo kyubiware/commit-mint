@@ -3,6 +3,7 @@ import { mapGroqError } from "./ai.js"
 import type { ChangedFile } from "./git.js"
 import { getDefaultExcludes } from "./git.js"
 import { type CommitGroup, parseGroupingResponse } from "./grouping-parser.js"
+import { reuniteTestsWithSources } from "./grouping-reunite.js"
 import {
 	type ChatClient,
 	createProvider,
@@ -11,6 +12,7 @@ import {
 } from "./provider.js"
 
 export type { CommitGroup } from "./grouping-parser.js"
+export { reuniteTestsWithSources } from "./grouping-reunite.js"
 
 export interface GroupingResult {
 	groups: CommitGroup[]
@@ -101,7 +103,8 @@ export function buildGroupingSystemPrompt(): string {
 		"You are analyzing changed files in a git repository. Group them into logical commits based on what changed and why. Each group should be a coherent unit of work.",
 		"",
 		"Rules:",
-		"- Group by feature, fix, or concern (e.g., 'Frontend refactor', 'API changes', 'Test updates')",
+		"- ALWAYS keep a test file in the same group as the source file it tests. Examples: `foo.test.ts` stays with `foo.ts`; `__tests__/foo.test.ts` stays with `foo.ts` in the parent directory; `tests/foo.test.ts` stays with `src/foo.ts`. Never put source and its tests in separate groups.",
+		"- Group by feature, fix, or concern (e.g., 'Frontend refactor', 'API changes')",
 		"- Keep related files together (e.g., a component + its test, a model + its migration)",
 		"- Separate documentation changes (*.md files, docs/) from code changes — put docs in their own group",
 		"- Do not split a single logical change across multiple groups",
@@ -127,11 +130,12 @@ export function buildRetryGroupingPrompt(): string {
 		"You MUST split the files into at least 2 groups based on what changed and why.",
 		"",
 		"Look for these natural split points:",
-		"- Source code vs tests",
 		"- Different features or modules (e.g., different directories)",
 		"- New files vs modified files vs deleted files",
 		"- Configuration changes vs code changes",
 		"- Documentation vs implementation",
+		"",
+		"Do NOT split a source file from its tests — keep `foo.ts` and `foo.test.ts` in the same group.",
 		"",
 		"If unsure, err on the side of MORE groups, not fewer.",
 		"",
@@ -273,17 +277,26 @@ export function validateGroups(groups: CommitGroup[], allFiles: ChangedFile[]): 
 		}
 	}
 
+	// Move misplaced test files back into their source file's group. Done after
+	// path filtering (so hallucinated tests don't trigger moves) and before
+	// orphan bucketing (so a source-less test still gets caught by "Other
+	// changes"). `seen` is unaffected by inter-group moves.
+	const reunited = reuniteTestsWithSources(validated)
+	if (reunited !== validated) {
+		debug("validateGroups: reunited %d groups after test/source merge", reunited.length)
+	}
+
 	// Find files not in any group
 	const ungrouped = allFiles.filter((f) => !seen.has(f.path))
 
 	if (ungrouped.length > 0) {
 		debug("validateGroups: %d ungrouped files added to 'Other changes'", ungrouped.length)
-		validated.push({
+		reunited.push({
 			name: "Other changes",
 			description: "Miscellaneous changes that did not fit into other groups",
 			files: ungrouped.map((f) => f.path),
 		})
 	}
 
-	return validated
+	return reunited
 }
