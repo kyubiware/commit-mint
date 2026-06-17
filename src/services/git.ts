@@ -132,7 +132,7 @@ export async function getStatusShort() {
 }
 
 export async function getChangedFiles(): Promise<ChangedFile[]> {
-	const { stdout } = await execa("git", ["status", "--short"])
+	const { stdout } = await execa("git", ["status", "--short", "--untracked-files=all"])
 	if (!stdout.trim()) return []
 	const files = stdout
 		.split("\n")
