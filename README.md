@@ -36,17 +36,21 @@ cmint update      # update cmint to the latest published version
 
 See [all flags](#all-flags) for the full list.
 
-## Self-update (`cmint update`)
+## Providers
 
-`cmint update` checks the npm registry for a newer version and, if one exists,
-runs the appropriate global install command for your package manager (detected
-from `npm_config_user_agent` — npm, pnpm, yarn, or bun; falls back to npm).
+| Provider | Env var           | Default model        |
+| -------- | ----------------- | -------------------- |
+| Groq     | `GROQ_API_KEY`    | `openai/gpt-oss-20b` |
+| Cerebras | `CEREBRAS_API_KEY` | `gpt-oss-120b`     |
+| Mistral  | `MISTRAL_API_KEY` | `mistral-small`      |
 
-- If you're already on the latest version, it exits silently.
-- Otherwise it prints `current → latest` and asks for confirmation before
-  running the install (live npm output is streamed to your terminal).
-- `cmint update -y` (or `--yes`) skips the confirmation prompt — useful in
-  scripts.
+All three use OpenAI-compatible APIs and have a generous free tier. Groq uses the official SDK; Cerebras and
+Mistral use a built-in fetch client. Per-provider model overrides: set
+`model_groq`, `model_cerebras`, or `model_mistral` in `~/.commit-mint`.
+Resolution order is `model_<provider>` → `model` → provider default.
+
+`cmint config` walks you through provider, API key, model, locale, and
+timeout.
 
 ## Pre-flight checks (`.cmintrc`)
 
@@ -111,6 +115,18 @@ What do you want to stage?
   Auto-group into commits
   Run checks
 ```
+
+## Self-update (`cmint update`)
+
+`cmint update` checks the npm registry for a newer version and, if one exists,
+runs the appropriate global install command for your package manager (detected
+from `npm_config_user_agent` — npm, pnpm, yarn, or bun; falls back to npm).
+
+- If you're already on the latest version, it exits silently.
+- Otherwise it prints `current → latest` and asks for confirmation before
+  running the install (live npm output is streamed to your terminal).
+- `cmint update -y` (or `--yes`) skips the confirmation prompt — useful in
+  scripts.
 
 ## AI Agent Mode
 
@@ -193,22 +209,6 @@ they happen.
 
 Errors are parsed from **lint-staged**, **biome**, **tsc**, **vitest**/**jest**,
 and **eslint**. Unrecognized output falls back to a single raw-stderr entry.
-
-## Providers
-
-| Provider | Env var           | Default model        |
-| -------- | ----------------- | -------------------- |
-| Groq     | `GROQ_API_KEY`    | `openai/gpt-oss-20b` |
-| Cerebras | `CEREBRAS_API_KEY` | `gpt-oss-120b`     |
-| Mistral  | `MISTRAL_API_KEY` | `mistral-small`      |
-
-All three use OpenAI-compatible APIs. Groq uses the official SDK; Cerebras and
-Mistral use a built-in fetch client. Per-provider model overrides: set
-`model_groq`, `model_cerebras`, or `model_mistral` in `~/.commit-mint`.
-Resolution order is `model_<provider>` → `model` → provider default.
-
-`cmint config` walks you through provider, API key, model, locale, and
-timeout.
 
 ## Configuration
 
