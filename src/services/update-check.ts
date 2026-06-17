@@ -13,7 +13,8 @@ import { debug } from "../utils/debug.js"
 // parser. The `/-/package/` prefix works for both scoped and unscoped names.
 const REGISTRY_URL = "https://registry.npmjs.org/-/package/@kyubiware/commit-mint/dist-tags"
 const _PACKAGE_NAME = "@kyubiware/commit-mint"
-const TTL_MS = 24 * 60 * 60 * 1000
+const FRESH_MS = 60 * 60 * 1000
+const STALE_MS = 24 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 5000
 
 interface CacheEntry {
@@ -154,6 +155,39 @@ function displayNag(current: string, latest: string): void {
 }
 
 /**
+ * Fire-and-forget cache refresh used by the stale-while-revalidate (SWR) band
+ * (cache age in [FRESH_MS, STALE_MS)). Runs the registry fetch and writes a
+ * fresh cache entry without awaiting — the caller returns immediately with
+ * the cached `latest` so the nag decision is fast.
+ *
+ * Wrapped in try/catch and `void`-ed so the floating promise NEVER rejects
+ * (vitest fails the suite on unhandled rejections). On any failure (network,
+ * HTTP non-ok, malformed JSON, fs write error) the cache file is left
+ * unchanged and the failure is logged via {@link debug} only.
+ *
+ * No abort signal is wired here — the cancellable spinner only runs on the
+ * STALE blocking-fetch path, and FRESH/SWR callers explicitly want this to
+ * complete in the background regardless of user keystrokes.
+ */
+function refreshCacheInBackground(): void {
+	debug("refreshCacheInBackground: starting fire-and-forget refresh")
+	void (async () => {
+		try {
+			const latest = await fetchLatest()
+			if (latest === null) {
+				debug("refreshCacheInBackground: fetch returned null, leaving cache unchanged")
+				return
+			}
+			await saveCache({ latest, checkedAt: Date.now() })
+			debug("refreshCacheInBackground: refreshed cache to latest=%s", latest)
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err)
+			debug("refreshCacheInBackground: failed — %s", msg)
+		}
+	})()
+}
+
+/**
  * Outcome of an update check. Callers use this to decide which (if any)
  * non-nag message to show — e.g. "You are on the latest version" is only
  * appropriate after a real fetch, not on a cache hit.
@@ -166,6 +200,47 @@ export type UpdateCheckStatus =
 	| "fetch-current"
 	| "fetch-failed-or-aborted"
 	| "error"
+
+/**
+ * Resolve the cache-hit branch (FRESH / SWR / stale-or-missing). Returns
+ * `null` when the caller must fall through to the blocking-fetch path; returns
+ * a {@link UpdateCheckStatus} when the cache hit is terminal.
+ *
+ * Side effect: kicks off a fire-and-forget {@link refreshCacheInBackground}
+ * when age is in the SWR band [FRESH_MS, STALE_MS).
+ */
+function resolveCacheHit(
+	cached: CacheEntry | null,
+	currentVersion: string,
+	onNag: (current: string, latest: string) => void,
+): UpdateCheckStatus | null {
+	if (cached === null) {
+		debug("runUpdateCheck: no cache, fetching")
+		return null
+	}
+	const age = Date.now() - cached.checkedAt
+	if (age >= STALE_MS) {
+		debug("runUpdateCheck: cache stale (>=%dh), refetching", STALE_MS / 3_600_000)
+		return null
+	}
+	// Cache-hit band: FRESH (<1h) → silent; SWR (1h–24h) → serve +
+	// fire-and-forget background refresh for the next invocation.
+	if (age < FRESH_MS) {
+		debug("runUpdateCheck: cache fresh (<%dh), serving from cache", FRESH_MS / 3_600_000)
+	} else {
+		debug(
+			"runUpdateCheck: cache in SWR band (<%dh), serving + background refresh",
+			STALE_MS / 3_600_000,
+		)
+		refreshCacheInBackground()
+	}
+	if (semver.gt(cached.latest, currentVersion)) {
+		onNag(currentVersion, cached.latest)
+		return "cache-update"
+	}
+	debug("runUpdateCheck: current >= latest, no nag")
+	return "cache-current"
+}
 
 /**
  * Run the full update check. Exported for tests; the public surface is
@@ -195,19 +270,9 @@ export async function runUpdateCheck(
 	}
 	try {
 		const cached = await loadCache()
-		if (cached && Date.now() - cached.checkedAt < TTL_MS) {
-			debug("runUpdateCheck: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
-			if (semver.gt(cached.latest, currentVersion)) {
-				onNag(currentVersion, cached.latest)
-				return "cache-update"
-			}
-			debug("runUpdateCheck: current >= latest, no nag")
-			return "cache-current"
-		}
-		if (cached) {
-			debug("runUpdateCheck: cache stale, refetching")
-		} else {
-			debug("runUpdateCheck: no cache, fetching")
+		const cacheStatus = resolveCacheHit(cached, currentVersion, onNag)
+		if (cacheStatus !== null) {
+			return cacheStatus
 		}
 		const latest = await fetchLatest(parentSignal)
 		if (latest === null) {
@@ -251,21 +316,18 @@ export async function checkForUpdatesUpfront(currentVersion: string): Promise<vo
 		return
 	}
 
-	// Fast path: fresh cache, no network needed. Silent on cache hit — the
-	// "You are on the latest version" message is reserved for actual fetches.
+	// Fast path: cache hit (FRESH or SWR band). Delegate entirely to
+	// runUpdateCheck so nag + fire-and-forget refresh share one code path.
+	// The returned status is ignored — "latest version" feedback is reserved
+	// for actual fetches via reportFetchCurrent on the slow path below.
 	const cached = await loadCache()
-	if (cached && Date.now() - cached.checkedAt < TTL_MS) {
-		debug("checkForUpdatesUpfront: cache fresh (<%dh), skipping fetch", TTL_MS / 3_600_000)
-		if (semver.gt(cached.latest, currentVersion)) {
-			displayNag(currentVersion, cached.latest)
-		} else {
-			debug("checkForUpdatesUpfront: current >= latest, no nag")
-		}
+	if (cached && Date.now() - cached.checkedAt < STALE_MS) {
+		await runUpdateCheck(currentVersion)
 		return
 	}
 
 	if (cached) {
-		debug("checkForUpdatesUpfront: cache stale, refetching")
+		debug("checkForUpdatesUpfront: cache stale (>=%dh), refetching", STALE_MS / 3_600_000)
 	} else {
 		debug("checkForUpdatesUpfront: no cache, fetching")
 	}

@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { log } from "@clack/prompts"
@@ -80,6 +88,11 @@ afterEach(() => {
 function writeCache(latest: string, checkedAt: number): void {
 	mkdirSync(tempDir, { recursive: true })
 	writeFileSync(join(tempDir, "update-check.json"), JSON.stringify({ latest, checkedAt }), "utf8")
+}
+
+function readCacheFile(): { latest: string; checkedAt: number } {
+	const raw = readFileSync(join(tempDir, "update-check.json"), "utf8")
+	return JSON.parse(raw) as { latest: string; checkedAt: number }
 }
 
 function cacheExists(): boolean {
@@ -302,6 +315,105 @@ describe("version comparison", () => {
 		setFetchImpl(vi.fn() as unknown as typeof fetch)
 		await runUpdateCheck("0.6.6")
 		expect(warnSpy).toHaveBeenCalled()
+	})
+})
+
+describe("stale-while-revalidate background refresh", () => {
+	it("SWR: cache age in SWR band (e.g. 2h) triggers background refresh that overwrites cache file", async () => {
+		const originalCheckedAt = Date.now() - 2 * 60 * 60 * 1000 // 2h old → SWR band
+		writeCache("1.0.0", originalCheckedAt)
+		setFetchImpl(makeFetchOk("1.1.0"))
+		await runUpdateCheck("1.0.0")
+		await vi.waitFor(() => {
+			const parsed = readCacheFile()
+			expect(parsed.latest).toBe("1.1.0")
+			expect(parsed.checkedAt).toBeGreaterThan(originalCheckedAt)
+		})
+	})
+
+	it("SWR: cache age < FRESH_MS (e.g. 10 minutes) does NOT trigger a background refresh", async () => {
+		const originalCheckedAt = Date.now() - 10 * 60 * 1000 // 10 min old → FRESH band
+		writeCache("1.0.0", originalCheckedAt)
+		const fetchSpy = vi.fn()
+		setFetchImpl(fetchSpy as unknown as typeof fetch)
+		await runUpdateCheck("1.0.0")
+		// Flush any pending microtasks so a stray background refresh cannot
+		// leak into the next test before we assert.
+		await new Promise((r) => setTimeout(r, 50))
+		expect(fetchSpy).not.toHaveBeenCalled()
+		// Cache file must remain exactly as written — no silent mutation.
+		const parsed = readCacheFile()
+		expect(parsed.latest).toBe("1.0.0")
+		expect(parsed.checkedAt).toBe(originalCheckedAt)
+	})
+
+	it("SWR: runUpdateCheck returns well before a slow background fetch resolves (fire-and-forget)", async () => {
+		writeCache("1.0.0", Date.now() - 2 * 60 * 60 * 1000) // SWR band
+		const FETCH_DELAY_MS = 150
+		setFetchImpl((async () => {
+			await new Promise((r) => setTimeout(r, FETCH_DELAY_MS))
+			return { ok: true, status: 200, json: async () => ({ latest: "1.1.0" }) }
+		}) as unknown as typeof fetch)
+		const start = Date.now()
+		const status = await runUpdateCheck("1.0.0")
+		const elapsed = Date.now() - start
+		// If refresh is truly fire-and-forget, the function must return long
+		// before the fetch delay elapses. Allow generous slack for CI jitter.
+		expect(elapsed).toBeLessThan(FETCH_DELAY_MS)
+		expect(status).toBe("cache-current")
+		// Flush the pending background refresh so it doesn't leak.
+		await new Promise((r) => setTimeout(r, FETCH_DELAY_MS + 50))
+	})
+
+	it("SWR: background fetch that throws (ENETUNREACH) leaves cache file unchanged and silent", async () => {
+		const originalCheckedAt = Date.now() - 2 * 60 * 60 * 1000 // SWR band
+		writeCache("1.0.0", originalCheckedAt)
+		setFetchImpl((async () => {
+			throw new Error("ENETUNREACH")
+		}) as unknown as typeof fetch)
+		warnSpy.mockClear()
+		infoSpy.mockClear()
+		await runUpdateCheck("1.0.0")
+		// Wait long enough for the floating IIFE to settle — `fetchLatest`
+		// catches the throw internally, so this just drains the microtask queue.
+		await new Promise((r) => setTimeout(r, 50))
+		const parsed = readCacheFile()
+		expect(parsed.latest).toBe("1.0.0")
+		expect(parsed.checkedAt).toBe(originalCheckedAt)
+		// No user-facing output from the background refresh — only debug() log.
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).not.toHaveBeenCalled()
+	})
+
+	it("SWR: background fetch that returns HTTP 404 leaves cache file unchanged and silent", async () => {
+		const originalCheckedAt = Date.now() - 2 * 60 * 60 * 1000 // SWR band
+		writeCache("1.0.0", originalCheckedAt)
+		setFetchImpl(makeFetchNotOk(404))
+		warnSpy.mockClear()
+		infoSpy.mockClear()
+		await runUpdateCheck("1.0.0")
+		await new Promise((r) => setTimeout(r, 50))
+		const parsed = readCacheFile()
+		expect(parsed.latest).toBe("1.0.0")
+		expect(parsed.checkedAt).toBe(originalCheckedAt)
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).not.toHaveBeenCalled()
+	})
+
+	it("SWR: checkForUpdatesUpfront (non-TTY stdin) in SWR band triggers background refresh", async () => {
+		// stderr TTY (passes shouldSkip) + stdin non-TTY (skips cancellable
+		// spinner → exercises the silent-fetch path inside checkForUpdatesUpfront).
+		Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true })
+		Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true })
+		const originalCheckedAt = Date.now() - 2 * 60 * 60 * 1000 // SWR band
+		writeCache("1.0.0", originalCheckedAt)
+		setFetchImpl(makeFetchOk("1.1.0"))
+		await checkForUpdatesUpfront("1.0.0")
+		await vi.waitFor(() => {
+			const parsed = readCacheFile()
+			expect(parsed.latest).toBe("1.1.0")
+			expect(parsed.checkedAt).toBeGreaterThan(originalCheckedAt)
+		})
 	})
 })
 
