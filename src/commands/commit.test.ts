@@ -122,7 +122,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { text } from "@clack/prompts"
 import { generateCommitMessage } from "../services/ai.js"
-import { runAllChecks } from "../services/checks.js"
+import { detectConfig, runAllChecks } from "../services/checks.js"
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js"
 import {
 	attemptCommit,
@@ -350,6 +350,10 @@ describe("commitCommand check integration", () => {
 		vi.clearAllMocks()
 		// Default: checks pass (no-op) so most tests reach message generation
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
+		// Default: getStagedFiles returns the canonical test path (repo-root-relative)
+		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
+		// Default: cmintrc config exists so runCheckPhaseInteractive doesn't no-op
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc")
 	})
 
 	function setupBaseFlow() {

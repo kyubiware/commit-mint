@@ -1,7 +1,6 @@
 import { isCancel, log, outro, spinner } from "@clack/prompts"
 import { dim, green, red } from "kolorist"
 import { generateCommitMessage } from "../services/ai.js"
-import { detectConfig, runAllChecks } from "../services/checks.js"
 import {
 	getModelForProvider,
 	getProviderApiKey,
@@ -21,7 +20,7 @@ import {
 } from "../services/git.js"
 import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js"
 import { createProgressHandler } from "../services/hook-progress.js"
-import { parseCheckErrors, parseHookErrors, parseToolChecks } from "../services/hooks.js"
+import { parseHookErrors, parseToolChecks } from "../services/hooks.js"
 import {
 	formatProviderName,
 	isValidProvider,
@@ -29,13 +28,12 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js"
-import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
-import { stopCheckSpinner } from "../ui/check-summary.js"
 import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js"
 import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js"
 import { reviewCommitMessage } from "../ui/review-message.js"
 import { saveCachedCommit } from "../utils/cache.js"
 import { debug } from "../utils/debug.js"
+import { runCheckPhaseInteractive } from "./check-phase.js"
 
 export interface CommitFlags {
 	retry: boolean
@@ -100,47 +98,12 @@ export async function runAutoGroupFlow(
 		// these files.
 		const cwdRelativeIncluded = included.filter((f) => f.status !== "D").map((f) => f.path)
 		const allFiles = await resolveToRepoRoot(cwdRelativeIncluded)
-		// Only show check UI when a cmintrc config actually exists
-		const configPath = await detectConfig(repoRoot)
-		if (configPath) {
-			debug("Running user checks on %d files...", allFiles.length)
-			const ck = spinner()
-			ck.start("Running checks...")
-			let checkResults = await runAllChecks(repoRoot, allFiles, 60000)
-			debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
-
-			while (!checkResults.ok) {
-				const failed = checkResults.results.filter((r) => !r.ok)
-				ck.stop(`${failed.length} check(s) failed`)
-				const rawOutput = failed
-					.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim())
-					.join("\n\n")
-				const checkErrors = parseCheckErrors(rawOutput)
-				const menuResult = await showCheckFailureMenu(checkErrors, rawOutput, async () => {
-					const retryResult = await runAllChecks(repoRoot, allFiles, 60000)
-					return retryResult.ok
-				})
-				if (menuResult === "cancelled") {
-					return "cancelled"
-				}
-				if (menuResult === "retried") {
-					debug("Re-running checks after retry...")
-					ck.start("Running checks...")
-					checkResults = await runAllChecks(repoRoot, allFiles, 60000)
-					debug(
-						"Retry check results: ok=%s, count=%d",
-						checkResults.ok,
-						checkResults.results.length,
-					)
-					continue
-				}
-				// "skipped" → continue to grouping and commits
-				break
-			}
-
-			if (checkResults.ok) {
-				stopCheckSpinner(ck, checkResults)
-			}
+		// No onRetry callback: files aren't staged yet, so `stageAll()` would be
+		// inappropriate here. The check commands read from the working tree, so
+		// external fixes are picked up directly on the next `runAllChecks` call.
+		const outcome = await runCheckPhaseInteractive(repoRoot, allFiles, 60000)
+		if (outcome === "cancelled") {
+			return "cancelled"
 		}
 	}
 

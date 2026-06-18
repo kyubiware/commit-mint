@@ -8,12 +8,11 @@ import {
 	stageAll,
 	stageFiles,
 } from "../services/git.js"
-import { parseCheckErrors } from "../services/hooks.js"
-import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
 import { stopCheckSpinner } from "../ui/check-summary.js"
 import { showStagingMenu } from "../ui/staging-menu.js"
 import { debug } from "../utils/debug.js"
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js"
+import { runCheckPhaseInteractive } from "./check-phase.js"
 
 /** Interactive staging loop for multiple changed files */
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Interactive staging loop with conditional branches
@@ -112,36 +111,16 @@ export async function runPreCommitChecks(
 	const stagedFileList = await getStagedFiles()
 	if (stagedFileList.length === 0) return
 
-	debug("Running user checks on %d staged files...", stagedFileList.length)
-	const ckSpinner = spinner()
-	ckSpinner.start("Running checks...")
-	let checkResults = await runAllChecks(checkRoot, stagedFileList, 60000)
-	stopCheckSpinner(ckSpinner, checkResults)
-	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
-
-	while (!checkResults.ok) {
-		const failed = checkResults.results.filter((r) => !r.ok)
-		const rawOutput = failed.map((r) => `[${r.tool}]\n${r.stdout}\n${r.stderr}`.trim()).join("\n\n")
-		const checkErrors = parseCheckErrors(rawOutput)
-		const menuResult = await showCheckFailureMenu(checkErrors, rawOutput, async () => {
-			const retryResult = await runAllChecks(checkRoot, stagedFileList, 60000)
-			return retryResult.ok
-		})
-		if (menuResult === "cancelled") {
-			process.exit(1)
-		}
-		if (menuResult === "retried") {
-			debug("Re-staging files and re-running checks after retry...")
-			await stageAll()
-			const ckSpinner = spinner()
-			ckSpinner.start("Running checks...")
-			checkResults = await runAllChecks(checkRoot, stagedFileList, 60000)
-			debug("Retry check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
-			stopCheckSpinner(ckSpinner, checkResults)
-			continue
-		}
-		// "skipped" — break out of loop
-		break
+	// Delegate the check pipeline (detectConfig → spinner → runAllChecks →
+	// retry loop with failure menu) to the shared check-phase module. On retry,
+	// re-stage files so fixes made in another terminal between the original run
+	// and the retry land in the index before checks re-run.
+	const outcome = await runCheckPhaseInteractive(checkRoot, stagedFileList, 60000, async () => {
+		debug("Re-staging files before retry...")
+		await stageAll()
+	})
+	if (outcome === "cancelled") {
+		process.exit(1)
 	}
 
 	// Formatters (prettier --write, eslint --fix, etc.) modify files on disk during checks.
