@@ -42,13 +42,11 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --list 'v*' --sort=-version:refname | head -2 | tail -1)
-          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$TAG" ]; then
-            LOG=$(git log "${PREV_TAG}..${TAG}" --pretty=format:"- %s (%h)")
-          else
-            LOG=$(git log "${TAG}" --pretty=format:"- %s (%h)")
-          fi
+          LOG=$(npx -y conventional-changelog@7.2.0 \
+            --preset angular \
+            --release-count 1 \
+            --infile /dev/null \
+            --stdout)
           echo "body<<EOF" >> "$GITHUB_OUTPUT"
           echo "$LOG" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
