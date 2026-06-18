@@ -21,6 +21,7 @@ vi.mock("../services/git.js", () => ({
 	assertGitRepo: vi.fn(),
 	getChangedFiles: vi.fn(),
 	getStagedDiff: vi.fn(),
+	getStagedFiles: vi.fn(),
 	stageAll: vi.fn(),
 	stageFiles: vi.fn(),
 	getHead: vi.fn(),
@@ -129,6 +130,7 @@ import {
 	getHead,
 	getRepoRoot,
 	getStagedDiff,
+	getStagedFiles,
 	getStatusShort,
 	stageAll,
 	stageFiles,
@@ -146,6 +148,11 @@ describe("commitCommand", () => {
 		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
 		// Default: checks pass (no-op) so existing tests reach message generation
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
+		// Default: getStagedFiles returns the canonical test path. Tests that
+		// exercise specific path scenarios (subdirectory bug, multi-file, etc.)
+		// override this mock per-case. Returns repo-root-relative paths to match
+		// the production contract (git diff --cached --name-only).
+		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
 	})
 
 	it("handles errors from generateMessage without unhandled rejection", async () => {

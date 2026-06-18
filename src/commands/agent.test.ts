@@ -12,6 +12,7 @@ vi.mock("../services/git.js", () => ({
 	getHead: vi.fn(),
 	resetStaging: vi.fn(),
 	getRepoRoot: vi.fn(),
+	resolveToRepoRoot: vi.fn((paths: string[]) => paths),
 	getDefaultExcludes: vi.fn(() => [
 		"package-lock.json",
 		"node_modules/**",
@@ -84,6 +85,7 @@ import {
 	getStagedDiff,
 	getStatusShort,
 	resetStaging,
+	resolveToRepoRoot,
 	stageFiles,
 } from "../services/git.js"
 import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js"
@@ -266,6 +268,46 @@ describe("agentCommand", () => {
 			commits: [],
 			errors: ["[biome] src/a.ts:1:1 lint error"],
 		})
+	})
+
+	// ---------------------------------------------------------------------------
+	// 6b. check uses repo-root-relative paths (subdirectory support)
+	// ---------------------------------------------------------------------------
+	it("check phase passes repo-root-relative paths to runAllChecks even when changedFiles are cwd-relative", async () => {
+		vi.mocked(assertGitRepo).mockResolvedValue(undefined)
+		vi.mocked(getStatusShort).mockResolvedValue("M background/index.ts\nM popup/Popup.tsx")
+		// cwd-relative paths (cmint invoked from a subdirectory)
+		vi.mocked(getChangedFiles).mockResolvedValue(
+			makeChangedFiles(["background/index.ts", "popup/Popup.tsx"]),
+		)
+		vi.mocked(stageFiles).mockResolvedValue(undefined)
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["extension/background/index.ts", "extension/popup/Popup.tsx"],
+			diff: "diff content",
+		})
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc")
+		// resolveToRepoRoot prepends the "extension/" cwd prefix
+		const repoRootRelative = ["extension/background/index.ts", "extension/popup/Popup.tsx"]
+		vi.mocked(resolveToRepoRoot).mockResolvedValue(repoRootRelative)
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
+		// Stop the flow after checks: AI grouping returns no groups
+		vi.mocked(filterExcludedFiles).mockReturnValue({
+			included: makeChangedFiles(["background/index.ts", "popup/Popup.tsx"]),
+			excluded: [],
+		})
+		vi.mocked(generateGroups).mockResolvedValue({ groups: [], excluded: [] })
+		vi.mocked(validateGroups).mockImplementation((g) => g)
+		vi.mocked(readConfig).mockResolvedValue({ provider: "groq", model: "m" })
+		vi.mocked(isValidProvider).mockReturnValue(true)
+
+		await agentCommand(defaultFlags())
+
+		expect(resolveToRepoRoot).toHaveBeenCalledWith(["background/index.ts", "popup/Popup.tsx"])
+		expect(runAllChecks).toHaveBeenCalledTimes(1)
+		const [, stagedPaths] = vi.mocked(runAllChecks).mock.calls[0]
+		expect(stagedPaths).toEqual(repoRootRelative)
+		expect(stagedPaths).not.toEqual(["background/index.ts", "popup/Popup.tsx"])
 	})
 
 	// ---------------------------------------------------------------------------

@@ -6,7 +6,9 @@ import {
 	getChangedFiles,
 	getHead,
 	getStagedDiff,
+	getStagedFiles,
 	resetStaging,
+	resolveToRepoRoot,
 	stageFiles,
 } from "./git.js"
 
@@ -312,6 +314,85 @@ describe("stageFiles", () => {
 		mockExeca.mockResolvedValue({ stdout: "" })
 		await stageFiles(["src/foo.ts"])
 		expect(mockExeca).toHaveBeenCalledWith("git", ["add", "src/foo.ts"])
+	})
+})
+
+describe("getStagedFiles", () => {
+	it("calls git diff --cached --name-only --diff-filter=d (repo-root-relative, excludes deletions)", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" })
+		await getStagedFiles()
+		expect(mockExeca).toHaveBeenCalledWith("git", [
+			"diff",
+			"--cached",
+			"--name-only",
+			"--diff-filter=d",
+		])
+	})
+
+	it("returns empty array when nothing is staged", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" })
+		const result = await getStagedFiles()
+		expect(result).toEqual([])
+	})
+
+	it("returns repo-root-relative paths from git diff output", async () => {
+		mockExeca.mockResolvedValue({
+			stdout: "extension/background/index.ts\nextension/popup/Popup.tsx",
+		})
+		const result = await getStagedFiles()
+		expect(result).toEqual(["extension/background/index.ts", "extension/popup/Popup.tsx"])
+	})
+
+	it("trims trailing newline without producing empty entries", async () => {
+		mockExeca.mockResolvedValue({ stdout: "src/a.ts\nsrc/b.ts\n" })
+		const result = await getStagedFiles()
+		expect(result).toEqual(["src/a.ts", "src/b.ts"])
+	})
+})
+
+describe("resolveToRepoRoot", () => {
+	it("short-circuits without calling git when given empty array", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" })
+		const result = await resolveToRepoRoot([])
+		expect(result).toEqual([])
+		expect(mockExeca).not.toHaveBeenCalled()
+	})
+
+	it("calls git rev-parse --show-prefix when given paths", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" })
+		await resolveToRepoRoot(["foo.ts"])
+		expect(mockExeca).toHaveBeenCalledWith("git", ["rev-parse", "--show-prefix"])
+	})
+
+	it("returns empty array when given empty array", async () => {
+		mockExeca.mockResolvedValue({ stdout: "extension/" })
+		const result = await resolveToRepoRoot([])
+		expect(result).toEqual([])
+	})
+
+	it("prepends prefix to convert cwd-relative paths to repo-root-relative", async () => {
+		// Simulate running from extension/ — git reports prefix "extension/"
+		mockExeca.mockResolvedValue({ stdout: "extension/" })
+		const result = await resolveToRepoRoot(["background/index.ts", "popup/Popup.tsx"])
+		expect(result).toEqual(["extension/background/index.ts", "extension/popup/Popup.tsx"])
+	})
+
+	it("returns paths unchanged when at repo root (empty prefix)", async () => {
+		mockExeca.mockResolvedValue({ stdout: "" })
+		const result = await resolveToRepoRoot(["src/foo.ts"])
+		expect(result).toEqual(["src/foo.ts"])
+	})
+
+	it("handles nested subdirectory prefix (e.g., packages/cmint/)", async () => {
+		mockExeca.mockResolvedValue({ stdout: "packages/cmint/" })
+		const result = await resolveToRepoRoot(["src/foo.ts"])
+		expect(result).toEqual(["packages/cmint/src/foo.ts"])
+	})
+
+	it("trims whitespace from prefix", async () => {
+		mockExeca.mockResolvedValue({ stdout: "extension/\n" })
+		const result = await resolveToRepoRoot(["foo.ts"])
+		expect(result).toEqual(["extension/foo.ts"])
 	})
 })
 

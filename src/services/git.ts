@@ -149,6 +149,44 @@ export async function getChangedFiles(): Promise<ChangedFile[]> {
 	return files
 }
 
+/**
+ * Return staged file paths relative to the repository root, excluding deletions.
+ *
+ * `git status --short` reports paths relative to the current working directory,
+ * but `.cmintrc` globs are written from the repo root (matching lint-staged
+ * conventions). Use this helper whenever staged paths need to match repo-root
+ * globs. `--diff-filter=d` excludes staged deletions so check commands don't
+ * receive paths whose content no longer exists.
+ */
+export async function getStagedFiles(): Promise<string[]> {
+	const { stdout } = await execa("git", ["diff", "--cached", "--name-only", "--diff-filter=d"])
+	const files = stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean)
+	debug("getStagedFiles:", files.length, "files")
+	return files
+}
+
+/**
+ * Convert cwd-relative file paths to repo-root-relative paths.
+ *
+ * Uses `git rev-parse --show-prefix` to discover the prefix of the current
+ * working directory relative to the repo root (e.g. `"extension/"` when cwd
+ * is `<repo>/extension`, or `""` when at the repo root). Useful when a caller
+ * has cwd-relative paths from `getChangedFiles()` but needs to match them
+ * against repo-root-relative `.cmintrc` globs (e.g. the auto-group flow,
+ * which runs checks BEFORE files are staged — so `getStagedFiles()` can't be
+ * used because the index doesn't yet contain those paths).
+ */
+export async function resolveToRepoRoot(cwdRelativePaths: string[]): Promise<string[]> {
+	if (cwdRelativePaths.length === 0) return []
+	const { stdout } = await execa("git", ["rev-parse", "--show-prefix"])
+	const prefix = stdout.trim()
+	if (!prefix) return [...cwdRelativePaths]
+	return cwdRelativePaths.map((p) => `${prefix}${p}`)
+}
+
 export async function stageFiles(paths: string[]): Promise<void> {
 	debug("stageFiles:", paths)
 	await execa("git", ["add", ...paths])

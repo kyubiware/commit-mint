@@ -64,6 +64,8 @@ vi.mock("../services/git.js", () => ({
 	]),
 	getHead: vi.fn(),
 	getStagedDiff: vi.fn(),
+	getStagedFiles: vi.fn(),
+	resolveToRepoRoot: vi.fn((paths: string[]) => paths),
 	resetStaging: vi.fn(),
 	stageFiles: vi.fn(),
 	getRepoRoot: vi.fn(),
@@ -123,6 +125,7 @@ import {
 	getRepoRoot,
 	getStagedDiff,
 	resetStaging,
+	resolveToRepoRoot,
 	stageFiles,
 } from "../services/git.js"
 import { filterExcludedFiles, generateGroups } from "../services/grouping.js"
@@ -269,6 +272,10 @@ describe("runAutoGroupFlow check integration", () => {
 		vi.mocked(getStagedDiff).mockResolvedValue({ files: ["src/a.ts"], diff: "diff" })
 		vi.mocked(getHead).mockResolvedValue("abc123")
 		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		// Default: resolveToRepoRoot returns the same paths (test runs at repo root
+		// in practice, so cwd-relative == repo-root-relative). Tests that exercise
+		// the subdirectory bug override this mock per-case.
+		vi.mocked(resolveToRepoRoot).mockImplementation(async (paths: string[]) => paths)
 		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg)
 		vi.mocked(parseHookErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }])
 		vi.mocked(parseCheckErrors).mockReturnValue([{ tool: "biome", message: "error", raw: "raw" }])
@@ -291,6 +298,50 @@ describe("runAutoGroupFlow check integration", () => {
 		// Both groups committed normally
 		expect(attemptCommit).toHaveBeenCalledTimes(2)
 		expect(result).toBe("committed")
+	})
+
+	it("passes repo-root-relative paths to runAllChecks even when changedFiles are cwd-relative", async () => {
+		// Auto-group runs checks BEFORE per-group staging, so the index doesn't
+		// yet contain the included files. resolveToRepoRoot converts the
+		// cwd-relative paths from filterExcludedFiles into repo-root-relative
+		// paths that line up with .cmintrc globs (lint-staged convention).
+		const cwdRelative: ChangedFile[] = [
+			{ status: "M", path: "background/index.ts", staged: true },
+			{ status: "M", path: "popup/Popup.tsx", staged: true },
+		]
+		const repoRootRelative = ["extension/background/index.ts", "extension/popup/Popup.tsx"]
+		vi.mocked(filterExcludedFiles).mockReturnValue({ included: cwdRelative, excluded: [] })
+		// Simulate resolveToRepoRoot prepending the "extension/" cwd prefix
+		vi.mocked(resolveToRepoRoot).mockResolvedValue(repoRootRelative)
+		vi.mocked(generateGroups).mockResolvedValue({
+			groups: [
+				{ name: "G1", description: "d", files: ["extension/background/index.ts"] },
+				{ name: "G2", description: "d", files: ["extension/popup/Popup.tsx"] },
+			],
+			excluded: [],
+		})
+		vi.mocked(showGroupingConfirmation).mockResolvedValue(true)
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key")
+		vi.mocked(readConfig).mockResolvedValue({ model: "m", locale: "en" })
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test")
+		vi.mocked(getStagedDiff).mockResolvedValue({ files: repoRootRelative, diff: "diff" })
+		vi.mocked(getHead).mockResolvedValue("abc123")
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg)
+		vi.mocked(parseHookErrors).mockReturnValue([])
+		vi.mocked(parseCheckErrors).mockReturnValue([])
+		vi.mocked(parseToolChecks).mockReturnValue([])
+		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc")
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true })
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
+
+		await runAutoGroupFlow(cwdRelative, flags)
+
+		expect(resolveToRepoRoot).toHaveBeenCalledWith(["background/index.ts", "popup/Popup.tsx"])
+		expect(runAllChecks).toHaveBeenCalledTimes(1)
+		const [, stagedPaths] = vi.mocked(runAllChecks).mock.calls[0]
+		expect(stagedPaths).toEqual(repoRootRelative)
+		expect(stagedPaths).not.toEqual(["background/index.ts", "popup/Popup.tsx"])
 	})
 
 	it("skips the check spinner entirely when no cmintrc config exists (no empty list item)", async () => {

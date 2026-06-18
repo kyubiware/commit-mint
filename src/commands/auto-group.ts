@@ -16,6 +16,7 @@ import {
 	getHead,
 	getStagedDiff,
 	resetStaging,
+	resolveToRepoRoot,
 	stageFiles,
 } from "../services/git.js"
 import { filterExcludedFiles, generateGroups, validateGroups } from "../services/grouping.js"
@@ -92,7 +93,13 @@ export async function runAutoGroupFlow(
 	if (!flags.noCheck) {
 		const { getRepoRoot } = await import("../services/git.js")
 		const repoRoot = await getRepoRoot()
-		const allFiles = included.filter((f) => f.status !== "D").map((f) => f.path)
+		// Convert cwd-relative paths from `filterExcludedFiles` to repo-root-relative
+		// so they line up with .cmintrc globs (which are written from the repo root,
+		// matching lint-staged conventions). Checks run BEFORE per-group staging,
+		// so we can't use `getStagedFiles()` here — the index doesn't yet contain
+		// these files.
+		const cwdRelativeIncluded = included.filter((f) => f.status !== "D").map((f) => f.path)
+		const allFiles = await resolveToRepoRoot(cwdRelativeIncluded)
 		// Only show check UI when a cmintrc config actually exists
 		const configPath = await detectConfig(repoRoot)
 		if (configPath) {

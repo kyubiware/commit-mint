@@ -125,7 +125,10 @@ export async function runCommand(
 			timeout,
 			all: true,
 			preferLocal: true,
-			...(repoRoot ? { localDir: repoRoot } : {}),
+			// Run from repo root so repo-root-relative file paths (used by
+			// .cmintrc globs and `git diff --cached`) resolve correctly even when
+			// cmint is invoked from a subdirectory.
+			...(repoRoot ? { localDir: repoRoot, cwd: repoRoot } : {}),
 		})
 		const ok = !result.failed
 		debug("runCommand: %s \u2014 ok=%s", tool, ok)

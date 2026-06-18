@@ -1,7 +1,13 @@
 import { log, outro, spinner } from "@clack/prompts"
 import { dim, red } from "kolorist"
 import { detectConfig, runAllChecks } from "../services/checks.js"
-import { getChangedFiles, getRepoRoot, stageAll, stageFiles } from "../services/git.js"
+import {
+	getChangedFiles,
+	getRepoRoot,
+	getStagedFiles,
+	stageAll,
+	stageFiles,
+} from "../services/git.js"
 import { parseCheckErrors } from "../services/hooks.js"
 import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
 import { stopCheckSpinner } from "../ui/check-summary.js"
@@ -46,7 +52,8 @@ export async function handleStaging(
 
 		if (stagingResult === "checks") {
 			await stageAll()
-			const allFiles = currentFiles.filter((f) => f.status !== "D").map((f) => f.path)
+			// Repo-root-relative paths line up with .cmintrc globs (lint-staged convention).
+			const allFiles = await getStagedFiles()
 			const configPath = await detectConfig(repoRoot)
 			if (configPath) {
 				const ckSpinner = spinner()
@@ -98,7 +105,11 @@ export async function runPreCommitChecks(
 ): Promise<void> {
 	if (noCheck) return
 	const checkRoot = await getRepoRoot()
-	const stagedFileList = changedFiles.filter((f) => f.staged && f.status !== "D").map((f) => f.path)
+	// Repo-root-relative paths line up with .cmintrc globs (which are written
+	// from the repo root, matching lint-staged conventions). `getChangedFiles()`
+	// returns cwd-relative paths, which silently fail to match globs when cmint
+	// is run from a subdirectory.
+	const stagedFileList = await getStagedFiles()
 	if (stagedFileList.length === 0) return
 
 	debug("Running user checks on %d staged files...", stagedFileList.length)
@@ -136,7 +147,12 @@ export async function runPreCommitChecks(
 	// Formatters (prettier --write, eslint --fix, etc.) modify files on disk during checks.
 	// Re-stage those modifications so getStagedDiff() captures the formatted content —
 	// otherwise the commit lands with pre-format content and the changes dangle in the WT.
-	await restageFormatterModifications(stagedFileList)
+	// Use cwd-relative paths here: restageFormatterModifications compares against
+	// getChangedFiles() (also cwd-relative) and writes via stageFiles() (git add from cwd).
+	const cwdRelativeStaged = changedFiles
+		.filter((f) => f.staged && f.status !== "D")
+		.map((f) => f.path)
+	await restageFormatterModifications(cwdRelativeStaged)
 }
 
 /**

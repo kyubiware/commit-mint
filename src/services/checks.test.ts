@@ -466,6 +466,32 @@ describe("runCommand", () => {
 		expect(result.ok).toBe(false)
 		expect(result.stderr).toMatch(/timed out/i)
 	})
+
+	it("sets cwd: repoRoot so commands resolve repo-root-relative file paths", async () => {
+		mockExeca.mockResolvedValue({
+			failed: false,
+			stdout: "",
+			stderr: "",
+			all: "",
+		})
+		await runCommand("biome check extension/foo.ts", 5000, "/fake/repo")
+		expect(mockExeca).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ cwd: "/fake/repo" }),
+		)
+	})
+
+	it("omits cwd when repoRoot is undefined (backwards compat)", async () => {
+		mockExeca.mockResolvedValue({
+			failed: false,
+			stdout: "",
+			stderr: "",
+			all: "",
+		})
+		await runCommand("echo hi", 5000)
+		const callArgs = mockExeca.mock.calls[0]
+		expect(callArgs?.[1]).not.toHaveProperty("cwd")
+	})
 })
 
 describe("runAllChecks", () => {

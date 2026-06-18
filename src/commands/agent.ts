@@ -10,6 +10,7 @@ import {
 	getStagedDiff,
 	getStatusShort,
 	resetStaging,
+	resolveToRepoRoot,
 	stageFiles,
 } from "../services/git.js"
 import {
@@ -145,7 +146,11 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 		const configPath = await detectConfig(repoRoot)
 		if (configPath) {
 			debug("Running user checks on changed files...")
-			const allFiles = changedFiles.filter((f) => f.status !== "D").map((f) => f.path)
+			// Convert cwd-relative paths from getChangedFiles to repo-root-relative
+			// so they match .cmintrc globs (lint-staged convention). Checks run
+			// BEFORE per-group staging, so we can't use getStagedFiles() here.
+			const cwdRelativeIncluded = changedFiles.filter((f) => f.status !== "D").map((f) => f.path)
+			const allFiles = await resolveToRepoRoot(cwdRelativeIncluded)
 			const checkResults = await runAllChecks(repoRoot, allFiles, 60000)
 			if (!checkResults.ok) {
 				const failed = checkResults.results.filter((r) => !r.ok)
