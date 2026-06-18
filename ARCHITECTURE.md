@@ -34,7 +34,7 @@
 **Commands Layer:**
 - Purpose: Orchestrate top-level workflows
 - Location: `src/commands/`
-- Contains: `commit.ts` (main lifecycle with preflight setup prompt), `commit-utils.ts` (shared recovery helpers), `agent.ts` (headless agent command with JSON output), `config.ts` (interactive config TUI), `auto-group.ts` (multi-commit flow), `retry.ts` (--retry mode), `staging.ts` (interactive staging loop + pre-commit checks), `setup.ts` (preflight setup prompt + .cmintrc wizard), `logs.ts` (debug log viewer)
+- Contains: `commit.ts` (main lifecycle with preflight setup prompt), `commit-utils.ts` (shared recovery helpers), `agent.ts` (headless agent command with JSON output), `config.ts` (interactive config TUI), `auto-group.ts` (multi-commit flow), `retry.ts` (--retry mode), `staging.ts` (interactive staging loop + pre-commit checks), `check-phase.ts` (shared interactive check-execution pipeline used by staging and auto-group), `setup.ts` (preflight setup prompt + .cmintrc wizard), `logs.ts` (debug log viewer)
 - Depends on: Services, UI, Utils
 - Used by: CLI layer
 
@@ -77,7 +77,7 @@
      - "Stage all" stages all files
      - "Select files" shows multi-select picker
 7. Refresh file list to reflect staged state — `getChangedFiles`
-8. Run user-defined pre-commit checks (if cmint config exists and `--noCheck` not set) — `src/commands/staging.ts:runPreCommitChecks` → `src/services/checks.ts:runAllChecks`. On failure: parse check errors via `parseCheckErrors`, show check failure menu (copy/view/retry/skip/cancel) — `src/ui/check-failure-menu.ts:showCheckFailureMenu`
+8. Run user-defined pre-commit checks (if cmint config exists and `--noCheck` not set) — `src/commands/staging.ts:runPreCommitChecks` → `src/commands/check-phase.ts:runCheckPhaseInteractive` → `src/services/checks.ts:runAllChecks`. On failure: parse check errors via `parseCheckErrors`, show check failure menu (copy/view/retry/skip/cancel) — `src/ui/check-failure-menu.ts:showCheckFailureMenu`
 9. Get staged diff with exclude patterns — `src/services/git.ts:getStagedDiff`
    - Returns `ExcludedFilesResult` when all staged files match exclude patterns (lockfiles, dist, etc.)
    - Excluded-only case: builds hardcoded message ("chore: update lockfile" / "chore: update generated files"), caches it, commits directly via `commitWithRecovery`
@@ -150,6 +150,16 @@
 8. **Cancel:** exit with message cached (in normal mode) or stop auto-group flow
 
 ## Key Abstractions
+
+**CheckPhaseOutcome:**
+- Purpose: Outcome enum returned by `runCheckPhaseInteractive` so callers can react to user's failure-menu choice
+- Location: `src/commands/check-phase.ts:11`
+- Pattern: Union type `"passed" | "skipped" | "cancelled"`
+
+**runCheckPhaseInteractive:**
+- Purpose: Single entry point for the interactive check-execution pipeline shared by `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging). Encapsulates: `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`. Caller is responsible for deriving repo-root-relative file paths and deciding how to handle `"cancelled"` (`process.exit(1)` vs propagating up).
+- Location: `src/commands/check-phase.ts:38`
+- Pattern: Async function `(repoRoot, files, timeout, onRetry?) => Promise<CheckPhaseOutcome>`
 
 **HookError:**
 - Purpose: Structured representation of a single hook failure (also used for check errors)
