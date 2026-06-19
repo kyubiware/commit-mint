@@ -12,6 +12,13 @@ import { updateCommand } from "./commands/update.js"
 import { setAgentMode } from "./utils/agent.js"
 import { setDebug, writeSessionHeader } from "./utils/debug.js"
 
+/** `cmint auto` subcommand handler — equivalent to `cmint --auto`. */
+export async function handleAutoSubcommand(version: string) {
+	writeSessionHeader()
+	setDebug(false)
+	void commitCommand({ auto: true, retry: false, agent: false }, version)
+}
+
 cli(
 	{
 		name: "cmint",
@@ -74,6 +81,15 @@ cli(
 				},
 				async (argv) => {
 					await logsCommand(argv.flags)
+				},
+			),
+			command(
+				{
+					name: "auto",
+					description: "Auto-group files into logical commits (alias for --auto)",
+				},
+				async () => {
+					await handleAutoSubcommand(version)
 				},
 			),
 			command({ name: "config" }, async () => {
