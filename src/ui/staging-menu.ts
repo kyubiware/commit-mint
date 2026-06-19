@@ -1,7 +1,9 @@
 import * as p from "@clack/prompts"
 import { bold, cyan, dim, green, red, yellow } from "kolorist"
+import { getAutoAccept, setAutoAccept } from "../services/auto-accept.js"
 import type { ChangedFile } from "../services/git.js"
 import { debug } from "../utils/debug.js"
+import { selectWithAutoAccept } from "./auto-accept-select.js"
 
 export interface StagingChoice {
 	files: string[] // selected file paths to stage
@@ -58,8 +60,17 @@ export async function showStagingMenu(
 	}
 	p.note(lines.join("\n"), `${files.length} file${files.length !== 1 ? "s" : ""}`)
 
-	const choice = await p.select({
+	const initialAutoAccept = await getAutoAccept()
+	debug("showStagingMenu: initial auto-accept=%s", initialAutoAccept)
+
+	const selectResult = await selectWithAutoAccept<
+		"autogroup" | "all" | "checks" | "staged" | "select" | "cancel"
+	>({
 		message: "Stage files for commit:",
+		initialAutoAccept,
+		onToggle: async (next) => {
+			await setAutoAccept(next)
+		},
 		options: [
 			{
 				label: "Auto-group into commits",
@@ -93,6 +104,14 @@ export async function showStagingMenu(
 			{ label: "Cancel", value: "cancel" },
 		],
 	})
+
+	if (typeof selectResult === "symbol") {
+		debug("showStagingMenu: user cancelled (clack cancel symbol)")
+		return null
+	}
+
+	const choice = selectResult.value
+	debug("showStagingMenu: choice=%s autoAccept=%s", choice, selectResult.autoAccept)
 
 	if (p.isCancel(choice) || choice === "cancel") {
 		return null

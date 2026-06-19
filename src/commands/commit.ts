@@ -1,5 +1,6 @@
 import { intro, isCancel, log, outro, spinner } from "@clack/prompts"
 import { dim, green, red } from "kolorist"
+import { getAutoAccept } from "../services/auto-accept.js"
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js"
 import {
 	assertGitRepo,
@@ -179,27 +180,33 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 		s.stop("Message generated")
 	}
 
-	// Review message (with optional code review)
-	const reviewed = await reviewCommitMessage(message, {
-		regenerate: async (hint) => {
-			const combinedHint = flags.hint ? `${flags.hint}\n${hint}` : hint
-			debug("Regenerating with combined hint:", combinedHint)
-			s.start("Regenerating commit message...")
-			try {
-				const newMessage = await generateMessage(diffResult.diff, combinedHint)
-				s.stop("Message regenerated")
-				return newMessage
-			} catch (err) {
-				s.stop(red("Regeneration failed"))
-				throw err
-			}
-		},
-	})
-	if (reviewed === null) {
-		outro(dim("Cancelled."))
-		return
+	// Review message (with optional code review) — skipped when auto-accept is ON
+	const autoAccept = await getAutoAccept()
+	if (autoAccept) {
+		debug("Auto-accept ON: skipping review step")
+		log.info(message)
+	} else {
+		const reviewed = await reviewCommitMessage(message, {
+			regenerate: async (hint) => {
+				const combinedHint = flags.hint ? `${flags.hint}\n${hint}` : hint
+				debug("Regenerating with combined hint:", combinedHint)
+				s.start("Regenerating commit message...")
+				try {
+					const newMessage = await generateMessage(diffResult.diff, combinedHint)
+					s.stop("Message regenerated")
+					return newMessage
+				} catch (err) {
+					s.stop(red("Regeneration failed"))
+					throw err
+				}
+			},
+		})
+		if (reviewed === null) {
+			outro(dim("Cancelled."))
+			return
+		}
+		message = reviewed
 	}
-	message = reviewed
 
 	// Cache message before attempting commit
 	await saveCachedCommit(repoRoot, message)

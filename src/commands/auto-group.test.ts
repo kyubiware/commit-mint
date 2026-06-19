@@ -106,6 +106,10 @@ vi.mock("../ui/review-message.js", () => ({
 	reviewCommitMessage: vi.fn(),
 }))
 
+vi.mock("../services/auto-accept.js", () => ({
+	getAutoAccept: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock("../utils/cache.js", () => ({
 	saveCachedCommit: vi.fn(),
 }))
@@ -116,6 +120,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { outro, spinner } from "@clack/prompts"
 import { generateCommitMessage } from "../services/ai.js"
+import { getAutoAccept } from "../services/auto-accept.js"
 import { detectConfig, runAllChecks } from "../services/checks.js"
 import { getProviderApiKey, readConfig } from "../services/config.js"
 import type { ChangedFile } from "../services/git.js"
@@ -502,5 +507,101 @@ describe("runAutoGroupFlow excluded files handling", () => {
 		await runAutoGroupFlow([{ status: "M", path: "dist/bundle.js", staged: true }], flags)
 
 		expect(attemptCommit).toHaveBeenCalledWith("chore: update generated files")
+	})
+})
+
+describe("runAutoGroupFlow auto-accept integration", () => {
+	beforeEach(() => {
+		vi.resetAllMocks()
+	})
+
+	const changedFiles: ChangedFile[] = [
+		{ status: "M", path: "src/a.ts", staged: true },
+		{ status: "M", path: "src/b.ts", staged: true },
+	]
+
+	// Non-auto flags: user picked "Auto-group into commits" from staging menu
+	const flags: CommitFlags = { retry: false, auto: false, agent: false }
+
+	const twoGroups = [
+		{ name: "Group 1", description: "desc", files: ["src/a.ts"] },
+		{ name: "Group 2", description: "desc", files: ["src/b.ts"] },
+	]
+
+	function setupAutoAcceptMocks() {
+		vi.mocked(filterExcludedFiles).mockReturnValue({ included: changedFiles, excluded: [] })
+		vi.mocked(generateGroups).mockResolvedValue({
+			groups: twoGroups as { name: string; description: string; files: string[] }[],
+			excluded: [],
+		})
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key")
+		vi.mocked(readConfig).mockResolvedValue({ model: "openai/gpt-oss-20b", locale: "en" })
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test message")
+		vi.mocked(getStagedDiff).mockResolvedValue({ files: ["src/a.ts"], diff: "diff" })
+		vi.mocked(getHead).mockResolvedValue("abc123")
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		vi.mocked(resolveToRepoRoot).mockImplementation(async (paths: string[]) => paths)
+		vi.mocked(parseHookErrors).mockReturnValue([])
+		vi.mocked(parseCheckErrors).mockReturnValue([])
+		vi.mocked(parseToolChecks).mockReturnValue([])
+		vi.mocked(detectConfig).mockResolvedValue(null)
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true })
+		// Default: auto-accept OFF (preserves existing behavior)
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+	}
+
+	it("skips showGroupingConfirmation when auto-accept is ON (non-auto mode)", async () => {
+		setupAutoAcceptMocks()
+		vi.mocked(getAutoAccept).mockResolvedValue(true)
+
+		await runAutoGroupFlow(changedFiles, flags)
+
+		expect(showGroupingConfirmation).not.toHaveBeenCalled()
+		// Both groups still committed
+		expect(attemptCommit).toHaveBeenCalledTimes(2)
+	})
+
+	it("calls showGroupingConfirmation when auto-accept is OFF (non-auto mode)", async () => {
+		setupAutoAcceptMocks()
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+		vi.mocked(showGroupingConfirmation).mockResolvedValue(true)
+
+		await runAutoGroupFlow(changedFiles, flags)
+
+		expect(showGroupingConfirmation).toHaveBeenCalledOnce()
+	})
+
+	it("skips reviewCommitMessage per-group when auto-accept is ON", async () => {
+		setupAutoAcceptMocks()
+		vi.mocked(getAutoAccept).mockResolvedValue(true)
+
+		await runAutoGroupFlow(changedFiles, flags)
+
+		expect(reviewCommitMessage).not.toHaveBeenCalled()
+		// Both groups committed with the generated message
+		expect(attemptCommit).toHaveBeenCalledWith("feat: test message", [], expect.any(Function))
+	})
+
+	it("calls reviewCommitMessage per-group when auto-accept is OFF", async () => {
+		setupAutoAcceptMocks()
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+		vi.mocked(showGroupingConfirmation).mockResolvedValue(true)
+		vi.mocked(reviewCommitMessage).mockImplementation(async (msg) => msg)
+
+		await runAutoGroupFlow(changedFiles, flags)
+
+		// Two groups → review called twice
+		expect(reviewCommitMessage).toHaveBeenCalledTimes(2)
+	})
+
+	it("--auto flag still skips both regardless of auto-accept setting", async () => {
+		setupAutoAcceptMocks()
+		// Even if auto-accept is somehow OFF, --auto should skip both
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+
+		await runAutoGroupFlow(changedFiles, { ...flags, auto: true })
+
+		expect(showGroupingConfirmation).not.toHaveBeenCalled()
+		expect(reviewCommitMessage).not.toHaveBeenCalled()
 	})
 })

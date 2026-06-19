@@ -63,6 +63,14 @@ vi.mock("../ui/staging-menu.js", () => ({
 	showStagingMenu: vi.fn(),
 }))
 
+vi.mock("../ui/review-message.js", () => ({
+	reviewCommitMessage: vi.fn(),
+}))
+
+vi.mock("../services/auto-accept.js", () => ({
+	getAutoAccept: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock("../services/checks.js", () => ({
 	runAllChecks: vi.fn(),
 	detectConfig: vi.fn(() => Promise.resolve(null)),
@@ -122,6 +130,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { text } from "@clack/prompts"
 import { generateCommitMessage } from "../services/ai.js"
+import { getAutoAccept } from "../services/auto-accept.js"
 import { detectConfig, runAllChecks } from "../services/checks.js"
 import { getProviderApiKey, readConfig, setConfigValue } from "../services/config.js"
 import {
@@ -137,6 +146,7 @@ import {
 } from "../services/git.js"
 import { parseCheckErrors } from "../services/hooks.js"
 import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
+import { reviewCommitMessage } from "../ui/review-message.js"
 import { showStagingMenu } from "../ui/staging-menu.js"
 import { saveCachedCommit } from "../utils/cache.js"
 
@@ -607,5 +617,64 @@ describe("commitCommand check integration", () => {
 
 		// The formatter-modified newly-added file must be re-staged
 		expect(stageFiles).toHaveBeenCalledWith(["src/new.ts"])
+	})
+})
+
+describe("commitCommand auto-accept integration", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		vi.mocked(getRepoRoot).mockResolvedValue("/tmp/test-repo")
+		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
+		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
+		vi.mocked(detectConfig).mockResolvedValue(null)
+		// Default: auto-accept OFF (preserves existing behavior)
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+		// Standard happy-path mocks
+		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts")
+		vi.mocked(getChangedFiles).mockResolvedValue([
+			{ status: "M", path: "src/foo.ts", staged: true },
+		])
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["src/foo.ts"],
+			diff: "some diff content",
+		})
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key")
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		})
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test commit")
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true })
+		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456")
+	})
+
+	it("skips reviewCommitMessage when auto-accept is ON", async () => {
+		vi.mocked(getAutoAccept).mockResolvedValue(true)
+
+		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
+
+		expect(reviewCommitMessage).not.toHaveBeenCalled()
+		// Still commits the generated message
+		expect(attemptCommit).toHaveBeenCalledWith("feat: test commit", [], expect.any(Function))
+	})
+
+	it("calls reviewCommitMessage when auto-accept is OFF", async () => {
+		vi.mocked(getAutoAccept).mockResolvedValue(false)
+		vi.mocked(reviewCommitMessage).mockResolvedValue("feat: test commit")
+
+		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
+
+		expect(reviewCommitMessage).toHaveBeenCalledOnce()
+		expect(reviewCommitMessage).toHaveBeenCalledWith("feat: test commit", expect.any(Object))
+	})
+
+	it("logs the generated message when auto-accept skips review", async () => {
+		vi.mocked(getAutoAccept).mockResolvedValue(true)
+		const { log } = await import("@clack/prompts")
+
+		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
+
+		// The auto-accepted message should be visible to the user (logged)
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining("feat: test commit"))
 	})
 })

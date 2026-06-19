@@ -1,6 +1,7 @@
 import { isCancel, log, outro, spinner } from "@clack/prompts"
 import { dim, green, red } from "kolorist"
 import { generateCommitMessage } from "../services/ai.js"
+import { getAutoAccept } from "../services/auto-accept.js"
 import {
 	getModelForProvider,
 	getProviderApiKey,
@@ -150,9 +151,16 @@ export async function runAutoGroupFlow(
 
 	showGroupedFiles(validatedGroups, included)
 
-	// Step 5: Show grouping confirmation (skip in auto mode)
-	if (flags.auto) {
-		debug("Auto mode: skipping grouping confirmation")
+	// Auto-accept mode: skip both grouping confirmation and per-group review.
+	// Read once here so a single toggle in the staging menu is honored for the
+	// entire flow. `flags.auto` already skips both; auto-accept extends that
+	// to interactive (non-`--auto`) runs.
+	const autoAccept = await getAutoAccept()
+	const skipPrompts = flags.auto || autoAccept
+
+	// Step 5: Show grouping confirmation (skip in auto mode or auto-accept)
+	if (skipPrompts) {
+		debug("Skipping grouping confirmation (auto=%s autoAccept=%s)", flags.auto, autoAccept)
 	} else {
 		const confirmed = await showGroupingConfirmation(validatedGroups, excluded)
 		if (!confirmed) {
@@ -190,9 +198,9 @@ export async function runAutoGroupFlow(
 		s.stop("Message generated")
 		log.info(dim(message))
 
-		// Review message (skip in auto mode)
-		if (flags.auto) {
-			debug("Auto mode: accepting generated message")
+		// Review message (skip in auto mode or auto-accept)
+		if (skipPrompts) {
+			debug("Accepting generated message (auto=%s autoAccept=%s)", flags.auto, autoAccept)
 		} else {
 			const reviewed = await reviewCommitMessage(message, {
 				regenerate: async (hint) => {
