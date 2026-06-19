@@ -40,12 +40,25 @@ jobs:
           token: ${{ github.token }}
           tag: ${{ steps.tag.outputs.tag }}
           writeToFile: false
+          excludeTypes: "build,docs,other,style,ci,chore"
+
+      - name: Clean changelog
+        id: clean
+        run: |
+          cat > /tmp/changelog.md << 'RAW_EOF'
+          ${{ steps.changelog.outputs.changes }}
+          RAW_EOF
+          sed -i '/^$/d' /tmp/changelog.md
+          sed -i 's/ (commit by @kyubiware)//g' /tmp/changelog.md
+          echo 'CHANGES<<DELIM_EOF' >> "$GITHUB_OUTPUT"
+          cat /tmp/changelog.md >> "$GITHUB_OUTPUT"
+          echo 'DELIM_EOF' >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
-          body: ${{ steps.changelog.outputs.changes }}
+          body: ${{ steps.clean.outputs.CHANGES }}
           draft: false
           prerelease: false
