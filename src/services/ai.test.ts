@@ -141,6 +141,17 @@ describe("generateCommitMessage", () => {
 		expect(systemPrompt).not.toContain("MUST use type:")
 	})
 
+	it("includes single commit instruction in system prompt", async () => {
+		mockCreate.mockResolvedValue({
+			choices: [{ message: { content: "feat: test" } }],
+		})
+
+		await generateCommitMessage("some diff", { apiKey: "test_key" })
+
+		const systemPrompt = mockCreate.mock.calls[0][0].messages[0].content
+		expect(systemPrompt).toMatch(/single commit message/i)
+	})
+
 	it("passes full diff under 20K chars without truncation", async () => {
 		mockCreate.mockResolvedValue({
 			choices: [{ message: { content: "feat: test" } }],
@@ -316,6 +327,36 @@ describe("generateCommitMessage", () => {
 
 		expect(result).toBe("not valid")
 		expect(mockCreate).toHaveBeenCalledTimes(2)
+	})
+
+	it("retries when AI returns multiple commit messages on separate lines", async () => {
+		mockCreate
+			.mockResolvedValueOnce({
+				choices: [{ message: { content: "feat(a): first change\nfeat(b): second change" } }],
+			})
+			.mockResolvedValueOnce({
+				choices: [{ message: { content: "feat: single valid commit" } }],
+			})
+
+		const result = await generateCommitMessage("some diff", { apiKey: "test_key" })
+
+		expect(result).toBe("feat: single valid commit")
+		expect(mockCreate).toHaveBeenCalledTimes(2)
+	})
+
+	it("includes single commit instruction in retry prompt", async () => {
+		mockCreate
+			.mockResolvedValueOnce({
+				choices: [{ message: { content: "not a conventional commit" } }],
+			})
+			.mockResolvedValueOnce({
+				choices: [{ message: { content: "feat: valid commit" } }],
+			})
+
+		await generateCommitMessage("some diff", { apiKey: "test_key" })
+
+		const retryPrompt = mockCreate.mock.calls[1][0].messages[0].content
+		expect(retryPrompt).toMatch(/single commit message/i)
 	})
 
 	it("does not retry when AI returns correctly formatted conventional commit", async () => {

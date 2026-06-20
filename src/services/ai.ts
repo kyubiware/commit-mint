@@ -132,7 +132,7 @@ function buildSystemPrompt(type?: string): string {
 		"Valid types: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test.\n" +
 		"Format: type(scope): description\n" +
 		"Use imperative mood, lowercase, no trailing period.\n" +
-		"Output ONLY the commit message, no markdown fences, no explanation."
+		"Output a SINGLE commit message, one line only. No markdown fences, no explanation."
 
 	if (type && type.trim().length > 0) {
 		prompt += `\nYou MUST use type: ${type}`
@@ -294,6 +294,7 @@ export async function generateCommitMessage(
 				"You MUST output ONLY a valid conventional commit message. " +
 					"Format: type(scope): description. " +
 					"If you output anything else your response will be rejected.\n" +
+					"Output a SINGLE commit message, one line only.\n" +
 					"Valid types: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test.",
 			)
 			debug(
