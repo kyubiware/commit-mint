@@ -100,7 +100,8 @@ export async function showStagingMenu(
 						},
 					]
 				: []),
-			{ label: "Select files...", value: "select" },
+			// "Select files..." is redundant when there's only one file — "Stage all" covers it.
+			...(files.length > 1 ? [{ label: "Select files...", value: "select" as const }] : []),
 			{ label: "Cancel", value: "cancel" },
 		],
 	})
