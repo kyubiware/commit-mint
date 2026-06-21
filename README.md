@@ -106,7 +106,9 @@ each with its own message. The flow:
 5. A hook failure on any group shows the recovery menu and stops the sequence
    — the remaining groups are not committed.
 
-`cmint` (no `-a`) on multiple files shows a staging menu:
+`cmint` (no `-a`) shows a staging menu for any number of changed files
+(including one). The menu is also the only place the `a` hotkey toggles
+auto-accept mode, so it always runs:
 
 ```
 What do you want to stage?

@@ -10,7 +10,7 @@
 - Plugin-style error parsers for 5 hook tools (lint-staged, biome, tsc, vitest/jest, eslint) with raw fallback — plus a separate `parseCheckErrors` for cmint check output format (`[tool]` prefix blocks)
 - 4-tier diff compression for AI prompt efficiency (full → strip context → cap hunks → file summary)
 - Provider abstraction supporting Groq, Cerebras, and Mistral via OpenAI-compatible API
-- Interactive staging menu for multi-file workflows (select files, auto-group, run checks from cmint config, stage all, commit staged)
+- Interactive staging menu shown for every commit (select files, auto-group, run checks from cmint config, stage all, commit staged) — also the only entry point to the auto-accept `a` hotkey toggle
 - User-defined pre-commit checks via cmint config files (14 naming patterns, glob matching via picomatch, function commands)
 - Recursive recovery menu with 6 options (copy, view full output, skip hooks, restage, edit message, cancel)
 - Check failure menu with 5 options (copy, view full output, retry checks, skip checks, cancel)
@@ -70,12 +70,11 @@
 5. Get changed files list — `src/services/git.ts:getChangedFiles`
 6. Stage changes:
    - `--auto` flag: delegate to `runAutoGroupFlow` in `src/commands/auto-group.ts`
-   - Single file: auto-stage it — `stageFiles`
-   - Multiple files: show interactive staging menu (auto-group into commits / commit staged only / stage all / run checks / select files / cancel) — `src/ui/staging-menu.ts:showStagingMenu`
+   - Otherwise: show interactive staging menu (auto-group into commits / commit staged only / stage all / run checks / select files / cancel) — `src/ui/staging-menu.ts:showStagingMenu`. The menu is shown for any number of changed files (including 1) because it is the only entry point to the auto-accept `a` hotkey toggle. "Select files..." is hidden when there is only one file.
      - "Auto-group into commits" delegates to `runAutoGroupFlow` in `src/commands/auto-group.ts`
      - "Run checks" runs `runAllChecks` then refreshes changed files list
      - "Stage all" stages all files
-     - "Select files" shows multi-select picker
+     - "Select files" shows multi-select picker (hidden for single-file case)
 7. Refresh file list to reflect staged state — `getChangedFiles`
 8. Run user-defined pre-commit checks (if cmint config exists and `--noCheck` not set) — `src/commands/staging.ts:runPreCommitChecks` → `src/commands/check-phase.ts:runCheckPhaseInteractive` → `src/services/checks.ts:runAllChecks`. On failure: parse check errors via `parseCheckErrors`, show check failure menu (copy/view/retry/skip/cancel) — `src/ui/check-failure-menu.ts:showCheckFailureMenu`
 9. Get staged diff with exclude patterns — `src/services/git.ts:getStagedDiff`
