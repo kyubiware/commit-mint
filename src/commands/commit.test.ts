@@ -163,6 +163,13 @@ describe("commitCommand", () => {
 		// override this mock per-case. Returns repo-root-relative paths to match
 		// the production contract (git diff --cached --name-only).
 		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
+		// Default: staging menu returns "stage all" so single-file tests flow
+		// through handleStaging → stageAll → checks → generate. Multi-file
+		// tests override this with their own file lists as needed.
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts"],
+			all: true,
+		})
 	})
 
 	it("handles errors from generateMessage without unhandled rejection", async () => {
@@ -353,6 +360,40 @@ describe("commitCommand", () => {
 		)
 		expect(stageAll).toHaveBeenCalled()
 	})
+
+	it("shows staging menu even when only one file changed (auto-accept toggle reachability)", async () => {
+		// Regression: previously the single-file case auto-staged without showing
+		// the menu, trapping users in auto-accept mode with no way to toggle it off.
+		vi.mocked(getStatusShort).mockResolvedValue("M  src/foo.ts")
+		vi.mocked(getChangedFiles).mockResolvedValue([
+			{ status: "M", path: "src/foo.ts", staged: true },
+		])
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts"],
+			all: true,
+		})
+		vi.mocked(stageAll).mockResolvedValue(undefined)
+		vi.mocked(getStagedDiff).mockResolvedValue({
+			files: ["src/foo.ts"],
+			diff: "some diff",
+		})
+		vi.mocked(getProviderApiKey).mockResolvedValue("gsk_test_key")
+		vi.mocked(readConfig).mockResolvedValue({
+			model: "openai/gpt-oss-20b",
+			locale: "en",
+		})
+		vi.mocked(generateCommitMessage).mockResolvedValue("feat: test")
+		vi.mocked(attemptCommit).mockResolvedValue({ ok: true })
+		vi.mocked(getHead).mockResolvedValueOnce("abc123").mockResolvedValueOnce("def456")
+
+		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
+
+		expect(showStagingMenu).toHaveBeenCalledWith(
+			[{ status: "M", path: "src/foo.ts", staged: true }],
+			false,
+		)
+		expect(stageAll).toHaveBeenCalled()
+	})
 })
 
 describe("commitCommand check integration", () => {
@@ -364,6 +405,11 @@ describe("commitCommand check integration", () => {
 		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
 		// Default: cmintrc config exists so runCheckPhaseInteractive doesn't no-op
 		vi.mocked(detectConfig).mockResolvedValue("/tmp/test-repo/.cmintrc")
+		// Default: staging menu returns "stage all" — see commitCommand describe above.
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts"],
+			all: true,
+		})
 	})
 
 	function setupBaseFlow() {
@@ -627,6 +673,11 @@ describe("commitCommand auto-accept integration", () => {
 		vi.mocked(runAllChecks).mockResolvedValue({ ok: true, results: [] })
 		vi.mocked(getStagedFiles).mockResolvedValue(["src/foo.ts"])
 		vi.mocked(detectConfig).mockResolvedValue(null)
+		// Default: staging menu returns "stage all" — see commitCommand describe above.
+		vi.mocked(showStagingMenu).mockResolvedValue({
+			files: ["src/foo.ts"],
+			all: true,
+		})
 		// Default: auto-accept OFF (preserves existing behavior)
 		vi.mocked(getAutoAccept).mockResolvedValue(false)
 		// Standard happy-path mocks

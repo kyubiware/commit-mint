@@ -9,7 +9,6 @@ import {
 	getRepoRoot,
 	getStagedDiff,
 	getStatusShort,
-	stageFiles,
 } from "../services/git.js"
 import {
 	formatProviderName,
@@ -76,11 +75,10 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 				process.exit(1)
 			}
 			return
-		} else if (changedFiles.length === 1) {
-			s.start(`Staging ${changedFiles[0].path}...`)
-			await stageFiles([changedFiles[0].path])
-			s.stop("File staged")
 		} else {
+			// Always show the staging menu, even for a single file — this is
+			// the only place the auto-accept `a` hotkey toggle is reachable.
+			// Skipping it for 1-file cases traps users in auto-accept mode.
 			const result = await handleStaging(changedFiles, flags)
 			if (!result) return
 			changedFiles = result.changedFiles
