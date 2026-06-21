@@ -72,11 +72,17 @@ export async function showStagingMenu(
 			await setAutoAccept(next)
 		},
 		options: [
-			{
-				label: "Auto-group into commits",
-				value: "autogroup",
-				hint: "LLM groups files into logical commits",
-			},
+			// "Auto-group into commits" only makes sense with multiple files —
+			// one file is already its own group.
+			...(files.length > 1
+				? [
+						{
+							label: "Auto-group into commits",
+							value: "autogroup" as const,
+							hint: "LLM groups files into logical commits",
+						},
+					]
+				: []),
 			...(stagedFiles.length > 0
 				? [
 						{
