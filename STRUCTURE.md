@@ -5,14 +5,16 @@
 ```
 commit-mint/
 ├── src/
-│   ├── cli.ts                  # CLI entry point (cleye argument parser, flag routing)
+│   ├── cli.ts                  # CLI entry point (cleye argument parser, subcommand routing: logs/config/auto/update)
 │   ├── env.d.ts                # Picomatch type declaration
 │   ├── commands/
 │   │   ├── agent.ts            # Headless agent command (non-interactive, JSON output)
 │   │   ├── agent.test.ts       # Agent command tests
 │   │   ├── auto-group.ts       # Auto-group multi-commit flow
 │   │   ├── auto-group.test.ts  # Auto-group flow tests
-│   │   ├── commit.ts           # Main commit flow orchestrator (with preflight setup)
+│   │   ├── check-phase.ts      # Shared interactive check-execution pipeline (detectConfig → spinner → runAllChecks → retry loop)
+│   │   ├── check-phase.test.ts # Check-phase pipeline tests
+│   │   ├── commit.ts           # Main commit flow orchestrator (with preflight setup + update check)
 │   │   ├── commit.test.ts      # Commit flow unit tests
 │   │   ├── commit-utils.ts     # Shared recovery helpers + commitWithRecovery
 │   │   ├── config.ts           # `cmint config` interactive TUI
@@ -20,10 +22,15 @@ commit-mint/
 │   │   ├── retry.ts            # --retry mode command
 │   │   ├── setup.ts            # Preflight .cmintrc setup wizard + tool detection
 │   │   ├── setup.test.ts       # Setup tests
-│   │   └── staging.ts          # Interactive staging loop + pre-commit checks
+│   │   ├── staging.ts          # Interactive staging loop + pre-commit checks
+│   │   ├── staging.test.ts     # Staging tests
+│   │   ├── update.ts           # `cmint update` self-update command
+│   │   └── update.test.ts      # Update command tests
 │   ├── services/
 │   │   ├── ai.ts               # Multi-provider AI commit message generation (4-tier diff compression)
 │   │   ├── ai.test.ts          # AI service tests
+│   │   ├── auto-accept.ts      # Auto-accept preference persistence to config
+│   │   ├── auto-accept.test.ts # Auto-accept tests
 │   │   ├── checks.ts           # User-defined pre-commit checks (config detection, glob matching, command execution)
 │   │   ├── checks.test.ts      # Checks service tests
 │   │   ├── clipboard.ts        # Cross-platform clipboard (wl-copy/xclip/xsel/pbcopy)
@@ -34,20 +41,29 @@ commit-mint/
 │   │   ├── grouping.ts         # AI-powered file grouping into logical commits
 │   │   ├── grouping.test.ts    # Grouping service tests
 │   │   ├── grouping-parser.ts  # Robust JSON array recovery for AI grouping responses
+│   │   ├── grouping-reunite.ts # Deterministic test/source file reunification
+│   │   ├── grouping-reunite.test.ts # Grouping reunite tests
 │   │   ├── hook-progress.ts    # Real-time hook progress parser and handler
 │   │   ├── hook-progress.test.ts # Hook progress tests
 │   │   ├── hooks.ts            # Hook error parser (5 tools) + parseCheckErrors + tool check summary
 │   │   ├── hooks.test.ts       # Hook error parser tests
 │   │   ├── provider.ts         # Multi-provider abstraction (Groq, Cerebras, Mistral)
-│   │   └── provider.test.ts    # Provider tests
+│   │   ├── provider.test.ts    # Provider tests
+│   │   ├── update-check.ts     # Stale-while-revalidate background update notifier
+│   │   ├── update-check.test.ts # Update check tests
+│   │   ├── updater.ts          # npm registry version check + global install
+│   │   └── updater.test.ts     # Updater tests
 │   ├── ui/
-│   │   ├── check-failure-menu.ts    # Check failure menu (5 options: copy/view/retry/skip/cancel)
-│   │   ├── check-failure-menu.test.ts # Check failure menu tests
+│   │   ├── auto-accept-select.ts        # Select prompt with inline `a`-hotkey toggle for auto-accept mode
+│   │   ├── auto-accept-select.test.ts   # Auto-accept select tests
+│   │   ├── check-failure-menu.ts        # Check failure menu (5 options: copy/view/retry/skip/cancel + inline diagnostics)
+│   │   ├── check-failure-menu.test.ts   # Check failure menu tests
+│   │   ├── check-summary.ts             # Check spinner summary utility (per-tool success display)
 │   │   ├── grouping.ts         # Grouping confirmation UI + grouped files display + progress
 │   │   ├── recovery-menu.ts    # Interactive recovery TUI (6 options)
 │   │   ├── recovery-menu.test.ts # Recovery menu tests
-│   │   ├── review-message.ts   # Message review step (use-as-is/edit/cancel)
-│   │   └── staging-menu.ts     # Staging menu (file list, status labels, multi-select fallback)
+│   │   ├── review-message.ts   # Message review step (use-as-is/edit/cancel/regenerate)
+│   │   └── staging-menu.ts     # Staging menu (file list, status labels, multi-select fallback, auto-accept toggle)
 │   └── utils/
 │       ├── agent.ts            # Agent mode boolean gate + AgentResult types + EXIT_CODES
 │       ├── agent.test.ts       # Agent utility tests
@@ -58,8 +74,8 @@ commit-mint/
 ├── .cmint-skip-setup           # Optional marker to suppress preflight setup prompt
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml              # CI workflow
-│       └── release.yml         # Release workflow
+│       ├── ci.yml              # CI workflow (test + lint + typecheck)
+│       └── release.yml         # Release workflow (publish to npm on tags)
 ├── .omo/                       # OpenCode planning system (drafts, evidence, notepads, plans)
 ├── .opencode/                  # OpenCode configuration directory
 ├── dist/                       # Build output (gitignored)
@@ -88,17 +104,17 @@ commit-mint/
 **`src/commands/`:**
 - Purpose: Top-level command orchestrators for the CLI
 - Contains: Async functions exported as command handlers
-- Key files: `commit.ts` (main lifecycle with preflight setup dispatch, delegates to retry/auto-group/staging), `auto-group.ts` (multi-commit auto-group flow with excluded-file pre-commit + checks with retry menu + AI grouping with low-quality detection + per-group recovery), `agent.ts` (headless agent command — validates flags, asserts repo, auto-stages, runs checks, generates groups and messages, emits JSON to stdout), `config.ts` (interactive TUI for reading/writing INI config), `setup.ts` (`.cmintrc` wizard — detects biome/eslint/typescript/vitest via marker files, generates config, preflight prompt with skip-marker), `logs.ts` (reads debug log from `~/.cache/commit-mint/debug.log`, shows last session or `-n` lines), `commit-utils.ts` (shared `makeRecoveryCallbacks` + `commitWithRecovery`), `retry.ts` (--retry mode: load cached message, replay commit), `staging.ts` (interactive staging loop + `runPreCommitChecks` with retry)
+- Key files: `commit.ts` (main lifecycle with preflight setup dispatch, delegates to retry/auto-group/staging), `auto-group.ts` (multi-commit auto-group flow with excluded-file pre-commit + checks with retry menu + AI grouping with low-quality detection + test/source reunification + per-group recovery), `agent.ts` (headless agent command — validates flags, asserts repo, auto-stages, runs checks, generates groups and messages, emits JSON to stdout), `check-phase.ts` (shared interactive check pipeline — `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`), `config.ts` (interactive TUI for reading/writing INI config), `setup.ts` (`.cmintrc` wizard — detects biome/eslint/typescript/vitest via marker files, generates config, preflight prompt with skip-marker), `staging.ts` (interactive staging loop + `runPreCommitChecks` with retry), `commit-utils.ts` (shared `makeRecoveryCallbacks` + `commitWithRecovery`), `retry.ts` (--retry mode: load cached message, replay commit), `logs.ts` (reads debug log from `~/.cache/commit-mint/debug.log`, shows last session or `-n` lines), `update.ts` (self-update — detects package manager, fetches latest version, confirms and runs global install)
 
 **`src/services/`:**
 - Purpose: Encapsulated system integrations and business logic
-- Contains: Git operations, AI generation (multi-provider), hook parsing, config I/O, clipboard, file grouping, user-defined checks, provider abstraction, hook progress display, grouping response parser
-- Key files: `git.ts` (all git subprocess calls, ChangedFile/DiffResult types, onProgress hook stderr collection), `ai.ts` (multi-provider via `createProvider`, 4-tier diff compression, think tag stripping, reasoning fallback, conventional commit validation with retry), `hooks.ts` (5 error parsers + `parseCheckErrors` for cmint check output + `extractToolName` with sh -c unwrapping + uv support + package manager script mapping + tool check summary), `hook-progress.ts` (stderr parser for [STARTED]/[COMPLETED]/[FAILED] markers + progress handler factory), `checks.ts` (14 config file naming patterns, JSON/JS/TS loading via jiti, picomatch glob matching, shell command execution with timeout, function commands), `grouping.ts` (AI file grouping via `generateGroups` using `parseGroupingResponse` from group-parser + exclude filtering + lockfile companion promotion + `validateGroups` + orphan handling + `isLowQualityGrouping` with retry), `grouping-parser.ts` (robust JSON recovery: markdown fence stripping, think tag removal, array extraction, top-level object scan fallback), `config.ts` (INI config at ~/.commit-mint, provider-aware API key resolution via `getProviderApiKey`, per-provider model keys via `getModelForProvider`), `clipboard.ts` (shell-out clipboard, returns boolean), `provider.ts` (multi-provider abstraction: ProviderName union, PROVIDER_CONFIGS, createProvider factory — Groq SDK for groq, generic fetch client for others)
+- Contains: Git operations, AI generation (multi-provider), hook parsing, config I/O, clipboard, file grouping, user-defined checks, provider abstraction, hook progress display, grouping response parser, grouping reunification, auto-accept persistence, update notifier, updater
+- Key files: `git.ts` (all git subprocess calls, ChangedFile/DiffResult types, onProgress hook stderr collection), `ai.ts` (multi-provider via `createProvider`, 4-tier diff compression, think tag stripping, reasoning fallback, conventional commit validation with retry), `hooks.ts` (5 error parsers + `parseCheckErrors` for cmint check output + `extractToolName` with sh -c unwrapping + uv support + package manager script mapping + tool check summary), `hook-progress.ts` (stderr parser for [STARTED]/[COMPLETED]/[FAILED] markers + progress handler factory), `checks.ts` (14 config file naming patterns, JSON/JS/TS loading via jiti, picomatch glob matching, shell command execution with timeout, function commands), `grouping.ts` (AI file grouping via `generateGroups` using `parseGroupingResponse` from group-parser + exclude filtering + lockfile companion promotion + `validateGroups` + orphan handling + `isLowQualityGrouping` with retry + `reuniteTestsWithSources`), `grouping-parser.ts` (robust JSON recovery: markdown fence stripping, think tag removal, array extraction, top-level object scan fallback), `grouping-reunite.ts` (deterministic test/source pair matching — co-located, `__tests__/` mirror, `tests/`/`test/` mirror — moves misplaced test files back to their source group), `config.ts` (INI config at ~/.commit-mint, provider-aware API key resolution via `getProviderApiKey`, per-provider model keys via `getModelForProvider`, auto-accept key), `clipboard.ts` (shell-out clipboard, returns boolean), `provider.ts` (multi-provider abstraction: ProviderName union, PROVIDER_CONFIGS, createProvider factory — Groq SDK for groq, generic fetch client for others), `auto-accept.ts` (read/write auto-accept preference to config), `update-check.ts` (stale-while-revalidate update notifier — 3 cache bands, cancellable spinner, fire-and-forget background refresh), `updater.ts` (package manager detection, `npm view` version fetch, semver comparison, global install via execa)
 
 **`src/ui/`:**
 - Purpose: Interactive terminal user interface
-- Contains: Recovery TUI (6 options), staging menu (6 options with file list/status), check failure menu (5 options with tsc/eslint inline diagnostics), message review step, grouping confirmation UI
-- Key files: `recovery-menu.ts` (6-option recovery menu with clipboard state tracking + view raw output + skip hooks + restage + edit message + cancel), `staging-menu.ts` (file list with staged/changed grouping, status labels, 6 options: auto-group / commit staged / stage all / run checks / select files / cancel), `check-failure-menu.ts` (5 options: copy/view/retry/skip/cancel, tsc diagnostic extraction with summary limit, eslint stylish format parsing, `formatCheckFailureSummary`), `review-message.ts` (3-option message review: use-as-is/edit/cancel), `grouping.ts` (grouping confirmation with file list + changed files table + grouping summary + group progress display)
+- Contains: Recovery TUI (6 options), staging menu (6 options with file list/status + auto-accept `a` hotkey), check failure menu (5 options with tsc/eslint/vitest inline diagnostics), auto-accept select prompt, check summary spinner, message review step, grouping confirmation UI
+- Key files: `recovery-menu.ts` (6-option recovery menu with clipboard state tracking + view raw output + skip hooks + restage + edit message + cancel), `staging-menu.ts` (file list with staged/changed grouping, status labels, options: auto-group / commit staged / stage all / run checks / select files / cancel, integrates `selectWithAutoAccept` for `a` hotkey toggle), `check-failure-menu.ts` (5 options: copy/view/retry/skip/cancel, tsc diagnostic extraction with summary limit, ESLint stylish format parsing, vitest/jest test failure grouping with `formatCheckFailureSummary`), `auto-accept-select.ts` (custom `@clack/core` `SelectPrompt` with inline `a`-hotkey toggle — renders status line `⚡ Auto-accept: ON/OFF (press 'a' to toggle)`), `check-summary.ts` (spinner stop helper with per-tool success display or failure count), `review-message.ts` (3-option message review: use-as-is/edit/cancel + regenerate), `grouping.ts` (grouping confirmation with file list + changed files table + grouping summary + group progress display)
 
 **`src/utils/`:**
 - Purpose: Generic utilities with no business logic or side effects
@@ -112,7 +128,7 @@ commit-mint/
 
 **`.github/workflows/`:**
 - Purpose: CI/CD pipelines
-- Contains: `ci.yml` (test + lint + typecheck on push/PR), `release.yml` (publish to npm on tags)
+- Contains: `ci.yml` (test + lint + typecheck on push/PR), `release.yml` (publish to npm on tags) + `release-changelog.yml` (automated changelog generation)
 - Note: Not part of application code
 
 **`.omo/`:**
@@ -132,13 +148,13 @@ commit-mint/
 
 ## Key File Locations
 
-**Entry Points:** `src/cli.ts`: Shebang script that parses argv via `cleye`, sets debug mode, writes session header, dispatches to `agentCommand` (when `--agent`) or `commitCommand`; has `config` and `logs` subcommands
+**Entry Points:** `src/cli.ts`: Shebang script that parses argv via `cleye`, sets debug mode, writes session header, registers subcommands (`logs`, `config`, `auto`, `update`), dispatches to `agentCommand` (when `--agent`) or `commitCommand`
 
-**Configuration:** `src/services/config.ts`: Reads/writes INI at `~/.commit-mint`, merged with defaults (provider, model, model_groq, model_cerebras, model_mistral, locale, max-length, type, timeout, proxy). `getProviderApiKey(provider)` checks `$GROQ_API_KEY` / `$CEREBRAS_API_KEY` / `$MISTRAL_API_KEY` env vars first, then config file. `getModelForProvider(config, provider, defaultModel)` resolves per-provider model override `model_<provider>`, falls back to global `model`, then provider default.
+**Configuration:** `src/services/config.ts`: Reads/writes INI at `~/.commit-mint`, merged with defaults (provider, model, model_groq, model_cerebras, model_mistral, locale, max-length, type, timeout, proxy, auto-accept). `getProviderApiKey(provider)` checks `$GROQ_API_KEY` / `$CEREBRAS_API_KEY` / `$MISTRAL_API_KEY` env vars first, then config file. `getModelForProvider(config, provider, defaultModel)` resolves per-provider model override `model_<provider>`, falls back to global `model`, then provider default.
 
-**Core Logic:** `src/commands/commit.ts` (204 lines): Main orchestrator — preflight setup prompt, dispatches to retry mode, auto-group, or normal flow with staging menu, excluded files, pre-commit checks, AI message generation, review, and recovery. `src/commands/auto-group.ts` (319 lines): Orchestrates multi-commit auto-group flow — excluded-file pre-commit, checks with retry menu, AI grouping with low-quality detection, confirmation, sequential per-group commits with recovery. `src/commands/agent.ts` (310 lines): Headless agent mode — validates flags, asserts repo, auto-stages, runs checks, generates groups and messages, emits JSON. `src/commands/staging.ts` (146 lines): Interactive staging loop with auto-group, checks run, stage-all, select-files options + `runPreCommitChecks` with retry loop. `src/commands/commit-utils.ts` (64 lines): Shared `makeRecoveryCallbacks` and `commitWithRecovery` that handles attempt → HEAD check → tool check summary / recovery menu. `src/commands/retry.ts` (27 lines): Load cached message and re-attempt commit via `commitWithRecovery`. `src/commands/setup.ts` (239 lines): `.cmintrc` setup wizard + preflight prompt with skip-marker. `src/commands/logs.ts` (50 lines): Debug log viewer reading `~/.cache/commit-mint/debug.log`. `src/services/ai.ts` (319 lines): 4-tier diff compression, multi-provider client creation via `createProvider`, Groq SDK for groq, generic fetch client for others, think tag stripping, reasoning fallback, conventional commit validation + retry with strict prompt. `src/services/provider.ts` (134 lines): Multi-provider abstraction — Groq, Cerebras, Mistral definitions, `createProvider` factory, generic OpenAI-compatible fetch client, provider env key mapping. `src/services/checks.ts` (305 lines): User-defined pre-commit checks — 14 config naming patterns, JSON/JS/TS/MJS/CJS loading via jiti, picomatch glob matching, shell command execution with fail-fast, function commands. `src/services/hooks.ts` (370 lines): 5 error parsers (lint-staged, biome, tsc, vitest/jest, eslint) + `parseCheckErrors` for cmint check output + tool check summary + `extractToolName` with sh -c unwrapping, package manager script mapping, uv support. `src/services/grouping.ts` (282 lines): AI file grouping — `generateGroups` using `parseGroupingResponse` from group-parser, `isLowQualityGrouping` with retry, exclude filtering, lockfile companion promotion, `validateGroups`, orphan handling. `src/services/grouping-parser.ts` (133 lines): Robust JSON recovery from AI responses — think tag stripping, markdown fence removal, array extraction, top-level object scan fallback, group coercion. `src/services/git.ts` (190 lines): Git operations with exclude patterns, `getStagedDiff` returning union type, `attemptCommit` with real-time progress handler, `attemptCommitNoVerify`. `src/services/config.ts` (135 lines): INI read/write, default merge, API key resolution. `src/services/hook-progress.ts` (45 lines): Progress handler factory, marker parser. `src/services/clipboard.ts` (110 lines): Shell-out clipboard with fallback chain. `src/ui/recovery-menu.ts` (138 lines): 6-option recovery menu with clipboard state tracking. `src/ui/staging-menu.ts` (132 lines): Staging menu with status labels, file list, multi-select fallback. `src/ui/check-failure-menu.ts` (247 lines): Check failure menu with tsc/eslint inline diagnostics, 5 options. `src/ui/grouping.ts` (110 lines): Grouping confirmation, table view, progress display. `src/ui/review-message.ts` (41 lines): 3-option message review. `src/utils/debug.ts` (50 lines): Module-level gate + persistent log file with session headers. `src/utils/cache.ts` (47 lines): JSON cache with SHA-256 key. `src/utils/agent.ts` (36 lines): Agent mode gate, types, exit codes.
+**Core Logic:** `src/commands/commit.ts` (227 lines): Main orchestrator — preflight setup prompt, update check upfront, dispatches to retry mode, auto-group, or normal flow with staging menu, excluded files, pre-commit checks, AI message generation, auto-accept-aware review, and recovery. `src/commands/auto-group.ts` (304 lines): Orchestrates multi-commit auto-group flow — excluded-file pre-commit, checks with retry menu, AI grouping with low-quality detection and test/source reunification, confirmation, sequential per-group commits with recovery. `src/commands/agent.ts` (302 lines): Headless agent mode — validates flags, asserts repo, auto-stages, runs checks, generates groups and messages, emits JSON. `src/commands/staging.ts` (177 lines): Interactive staging loop with auto-group, checks run, stage-all, select-files options + `runPreCommitChecks` with retry loop. `src/commands/commit-utils.ts` (64 lines): Shared `makeRecoveryCallbacks` and `commitWithRecovery` that handles attempt → HEAD check → tool check summary / recovery menu. `src/commands/retry.ts` (27 lines): Load cached message and re-attempt commit via `commitWithRecovery`. `src/commands/setup.ts` (237 lines): `.cmintrc` setup wizard + preflight prompt with skip-marker. `src/commands/check-phase.ts` (88 lines): Shared interactive check pipeline — `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`. `src/commands/logs.ts` (50 lines): Debug log viewer reading `~/.cache/commit-mint/debug.log`. `src/commands/update.ts` (67 lines): Self-update command — detects package manager, fetches latest version, runs global install. `src/services/ai.ts` (251 lines): 4-tier diff compression, multi-provider client creation via `createProvider`, Groq SDK for groq, generic fetch client for others, think tag stripping, reasoning fallback, conventional commit validation + retry with strict prompt. `src/services/provider.ts` (98 lines): Multi-provider abstraction — Groq, Cerebras, Mistral definitions, `createProvider` factory, generic OpenAI-compatible fetch client, provider env key mapping. `src/services/checks.ts` (235 lines): User-defined pre-commit checks — 14 config naming patterns, JSON/JS/TS/MJS/CJS loading via jiti, picomatch glob matching, shell command execution with fail-fast, function commands. `src/services/hooks.ts` (370 lines): 5 error parsers + `parseCheckErrors` + tool check summary — routes stderr to lint-staged, biome, tsc, vitest/jest, ESLint parsers with raw fallback. `src/services/grouping.ts` (308 lines): AI file grouping with orphan validation, lockfile companion promotion, low-quality retry. `src/services/grouping-reunite.ts` (191 lines): Deterministic test/source reunification with 3 layout strategies. `src/services/update-check.ts` (469 lines): Stale-while-revalidate update notifier with 3 cache bands, cancellable spinner, fire-and-forget background refresh. `src/services/updater.ts` (118 lines): Package manager detection, `npm view` version fetch, global install command builder. `src/services/auto-accept.ts` (29 lines): Auto-accept preference persistence. `src/ui/staging-menu.ts` (158 lines): Staging menu with file list display, status labels, auto-accept `a` hotkey via `selectWithAutoAccept`. `src/ui/check-failure-menu.ts` (316 lines): Check failure menu with tsc diagnostic extraction, ESLint stylish format parsing, vitest/jest test failure grouping. `src/ui/recovery-menu.ts` (138 lines): 6-option recovery TUI with clipboard state tracking. `src/ui/auto-accept-select.ts` (137 lines): Custom `@clack/core` `SelectPrompt` with `a`-hotkey auto-accept toggle.
 
-**Tests:** Co-located `*.test.ts` siblings: `src/commands/agent.test.ts`, `src/commands/auto-group.test.ts`, `src/commands/commit.test.ts`, `src/commands/setup.test.ts`, `src/services/ai.test.ts`, `src/services/checks.test.ts`, `src/services/clipboard.test.ts`, `src/services/git.test.ts`, `src/services/grouping.test.ts`, `src/services/hooks.test.ts`, `src/services/hook-progress.test.ts`, `src/services/provider.test.ts`, `src/ui/check-failure-menu.test.ts`, `src/ui/recovery-menu.test.ts`, `src/utils/agent.test.ts`, `src/utils/debug.test.ts`
+**Tests:** Co-located `*.test.ts` siblings: `src/commands/agent.test.ts`, `src/commands/auto-group.test.ts`, `src/commands/check-phase.test.ts`, `src/commands/commit.test.ts`, `src/commands/setup.test.ts`, `src/commands/staging.test.ts`, `src/commands/update.test.ts`, `src/services/ai.test.ts`, `src/services/auto-accept.test.ts`, `src/services/checks.test.ts`, `src/services/clipboard.test.ts`, `src/services/git.test.ts`, `src/services/grouping.test.ts`, `src/services/grouping-reunite.test.ts`, `src/services/hooks.test.ts`, `src/services/hook-progress.test.ts`, `src/services/provider.test.ts`, `src/services/update-check.test.ts`, `src/services/updater.test.ts`, `src/ui/auto-accept-select.test.ts`, `src/ui/check-failure-menu.test.ts`, `src/ui/recovery-menu.test.ts`, `src/utils/agent.test.ts`, `src/utils/debug.test.ts`
 
 **Lint config:** `biome.json`: Tab indentation, 100 character line width, max 400 lines per file (800 for tests). `.cmintrc.ts`: Project's own cmint config — runs biome check, tsc, and vitest on staged files.
 
@@ -148,7 +164,7 @@ commit-mint/
 
 ## Naming Conventions
 
-**Files:** `camelCase.ts` — `commit.ts`, `auto-group.ts`, `agent.ts`, `config.ts`, `setup.ts`, `logs.ts`, `hooks.ts`, `clipboard.ts`, `hook-progress.ts`, `grouping.ts`, `grouping-parser.ts`, `checks.ts`, `provider.ts`, `recovery-menu.ts`, `staging-menu.ts`, `check-failure-menu.ts`, `cache.ts`, `debug.ts`, `agent.ts`. Test files use `.test.ts` suffix: `commit.test.ts`, `auto-group.test.ts`, `agent.test.ts`, `setup.test.ts`, `ai.test.ts`, `git.test.ts`, `checks.test.ts`, `hooks.test.ts`, `hook-progress.test.ts`, `grouping.test.ts`, `provider.test.ts`, `clipboard.test.ts`, `recovery-menu.test.ts`, `check-failure-menu.test.ts`, `agent.test.ts`, `debug.test.ts`
+**Files:** `camelCase.ts` — `commit.ts`, `auto-group.ts`, `agent.ts`, `config.ts`, `setup.ts`, `logs.ts`, `update.ts`, `hooks.ts`, `clipboard.ts`, `hook-progress.ts`, `grouping.ts`, `grouping-parser.ts`, `grouping-reunite.ts`, `checks.ts`, `provider.ts`, `auto-accept.ts`, `update-check.ts`, `updater.ts`, `recovery-menu.ts`, `staging-menu.ts`, `check-failure-menu.ts`, `auto-accept-select.ts`, `check-summary.ts`, `cache.ts`, `debug.ts`, `agent.ts`. Test files use `.test.ts` suffix: `commit.test.ts`, `auto-group.test.ts`, `agent.test.ts`, `setup.test.ts`, `staging.test.ts`, `update.test.ts`, `check-phase.test.ts`, `ai.test.ts`, `git.test.ts`, `checks.test.ts`, `hooks.test.ts`, `hook-progress.test.ts`, `grouping.test.ts`, `grouping-reunite.test.ts`, `provider.test.ts`, `clipboard.test.ts`, `auto-accept.test.ts`, `update-check.test.ts`, `updater.test.ts`, `recovery-menu.test.ts`, `check-failure-menu.test.ts`, `auto-accept-select.test.ts`, `agent.test.ts`, `debug.test.ts`
 
 **Directories:** Single-word lowercase: `commands/`, `services/`, `ui/`, `utils/`
 
@@ -170,6 +186,8 @@ commit-mint/
 
 **New extracted command (e.g. new flag mode):** `src/commands/[name].ts` — add a new file, import and dispatch from `commit.ts` or `cli.ts`
 
+**New check pipeline behavior:** `src/commands/check-phase.ts` — extend `runCheckPhaseInteractive` (add steps to the detectConfig → spinner → run → retry cycle)
+
 **New hook error parser:** `src/services/hooks.ts` — add a `parse*Errors` function, wire into `parseHookErrors` switch, update tests to cover behavior with all existing parsers
 
 **New recovery menu option:** `src/ui/recovery-menu.ts` — add to the options array in `select()` and add a `case` in the `switch`; update `RecoveryResult` type if adding new result states
@@ -184,11 +202,19 @@ commit-mint/
 
 **New grouping parser strategy:** `src/services/grouping-parser.ts` — extend `parseGroupingResponse` with additional recovery paths
 
+**New grouping reunification strategy:** `src/services/grouping-reunite.ts` — extend `candidateSourcePaths` with additional test/source layout patterns
+
 **New provider (Cerebras, Mistral, etc.):** `src/services/provider.ts` — add to `PROVIDER_CONFIGS` and `PROVIDER_ENV_KEYS`, update `ProviderName` type, ensure `createProvider` handles the new provider (Groq uses SDK, others use generic fetch)
 
 **New check config file name pattern:** `src/services/checks.ts` — add to the `CONFIG_FILES` array (checked in priority order)
 
 **New check behavior (e.g. new command format):** `src/services/checks.ts` — extend `resolveCommands`, `runCommandsForGlob`, or `matchFiles`
+
+**New auto-accept behavior:** `src/services/auto-accept.ts` — extend `parseAutoAcceptValue`, `getAutoAccept`, `setAutoAccept`
+
+**New update check behavior:** `src/services/update-check.ts` — extend `runUpdateCheck`, `checkForUpdatesUpfront`, or add new cache band strategies
+
+**New updater behavior:** `src/services/updater.ts` — extend `detectPackageManager`, `buildUpdateCommand`, or add new install methods
 
 **New service:** `src/services/[service-name].ts` — follow the existing pattern (named exports, ESM imports, debug logging)
 
