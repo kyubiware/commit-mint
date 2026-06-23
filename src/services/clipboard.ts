@@ -5,7 +5,13 @@ import { debug } from "../utils/debug.js"
 const GRACE_PERIOD_MS = 150
 
 export async function copyToClipboard(content: string): Promise<boolean> {
+	debug("clipboard: copying %d bytes", content.length)
+	// wl-copy is listed twice: `--foreground` keeps the wl-copy process we spawned
+	// as the one holding the clipboard (instead of an invisible forked child that
+	// can die silently and leave the Wayland clipboard empty without any error).
+	// The plain `wl-copy` fallback covers wl-clipboard 1.x, which lacks the flag.
 	const commands: [string, string[]][] = [
+		["wl-copy", ["--foreground"]],
 		["wl-copy", []],
 		["xclip", ["-selection", "clipboard"]],
 		["xsel", ["--clipboard", "--input"]],
