@@ -16,6 +16,7 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js"
+import { getRunChecks } from "../services/run-checks.js"
 import { checkForUpdatesUpfront } from "../services/update-check.js"
 import { reviewCommitMessage } from "../ui/review-message.js"
 import { saveCachedCommit } from "../utils/cache.js"
@@ -94,8 +95,14 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 	// Refresh file list after staging so staged state is accurate
 	changedFiles = await getChangedFiles()
 
-	// Run user-defined pre-commit checks (before AI message generation)
-	await runPreCommitChecks(changedFiles, flags.noCheck)
+	// Run user-defined pre-commit checks (before AI message generation).
+	// Checks run unless the per-invocation `--noCheck` flag is set OR the
+	// persisted `run-checks` preference is false (toggled via `c` hotkey in
+	// the staging menu).
+	const shouldRunChecks = !flags.noCheck && (await getRunChecks())
+	if (shouldRunChecks) {
+		await runPreCommitChecks(changedFiles, false)
+	}
 
 	// Get diff for AI
 	const diffResult = await getStagedDiff()

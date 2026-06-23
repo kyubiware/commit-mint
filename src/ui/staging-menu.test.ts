@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ChangedFile } from "../services/git.js"
 
-vi.mock("./auto-accept-select.js", () => ({
-	selectWithAutoAccept: vi.fn(),
-	isAutoAcceptCancel: vi.fn((v: unknown) => typeof v === "symbol"),
+vi.mock("./toggle-select.js", () => ({
+	selectWithToggles: vi.fn(),
+	isToggleSelectCancel: vi.fn((v: unknown) => typeof v === "symbol"),
 }))
 
 vi.mock("../services/auto-accept.js", () => ({
 	getAutoAccept: vi.fn(),
 	setAutoAccept: vi.fn(),
+}))
+
+vi.mock("../services/run-checks.js", () => ({
+	getRunChecks: vi.fn(),
+	setRunChecks: vi.fn(),
 }))
 
 vi.mock("@clack/prompts", () => ({
@@ -31,62 +36,130 @@ vi.mock("../utils/debug.js", () => ({
 }))
 
 import { getAutoAccept, setAutoAccept } from "../services/auto-accept.js"
-import { selectWithAutoAccept } from "./auto-accept-select.js"
+import { getRunChecks, setRunChecks } from "../services/run-checks.js"
 import { showStagingMenu } from "./staging-menu.js"
+import { selectWithToggles } from "./toggle-select.js"
 
 const files: ChangedFile[] = [
 	{ path: "src/a.ts", status: "M", staged: false },
 	{ path: "src/b.ts", status: "M", staged: false },
 ]
 
-describe("showStagingMenu auto-accept integration", () => {
+describe("showStagingMenu toggle integration", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		vi.mocked(getAutoAccept).mockResolvedValue(false)
+		vi.mocked(getRunChecks).mockResolvedValue(true)
 	})
 
-	it("reads the initial auto-accept state from config before showing the menu", async () => {
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "cancel", autoAccept: false })
+	it("reads the initial auto-accept and run-checks state from config before showing the menu", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false, runChecks: true },
+		})
 
-		await showStagingMenu(files, false)
+		await showStagingMenu(files, true)
 
 		expect(getAutoAccept).toHaveBeenCalledOnce()
+		expect(getRunChecks).toHaveBeenCalledOnce()
 	})
 
-	it("passes the initial state to selectWithAutoAccept", async () => {
+	it("passes the initial states to selectWithToggles as toggle definitions", async () => {
 		vi.mocked(getAutoAccept).mockResolvedValue(true)
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "cancel", autoAccept: true })
+		vi.mocked(getRunChecks).mockResolvedValue(false)
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: true, runChecks: false },
+		})
 
-		await showStagingMenu(files, false)
+		await showStagingMenu(files, true)
 
-		expect(selectWithAutoAccept).toHaveBeenCalledOnce()
-		const callOpts = vi.mocked(selectWithAutoAccept).mock.calls[0]?.[0]
-		expect(callOpts?.initialAutoAccept).toBe(true)
+		expect(selectWithToggles).toHaveBeenCalledOnce()
+		const callOpts = vi.mocked(selectWithToggles).mock.calls[0]?.[0]
+		const autoAcceptToggle = callOpts?.toggles.find((t) => t.key === "autoAccept")
+		const runChecksToggle = callOpts?.toggles.find((t) => t.key === "runChecks")
+		expect(autoAcceptToggle?.initial).toBe(true)
+		expect(runChecksToggle?.initial).toBe(false)
 	})
 
-	it("wires onToggle to persist the new state via setAutoAccept", async () => {
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "cancel", autoAccept: false })
+	it("registers both toggles with the correct hotkeys", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false, runChecks: true },
+		})
 
-		await showStagingMenu(files, false)
+		await showStagingMenu(files, true)
 
-		const callOpts = vi.mocked(selectWithAutoAccept).mock.calls[0]?.[0]
-		await callOpts?.onToggle?.(true)
+		const callOpts = vi.mocked(selectWithToggles).mock.calls[0]?.[0]
+		const hotkeys = callOpts?.toggles.map((t) => t.hotkey)
+		expect(hotkeys).toContain("a")
+		expect(hotkeys).toContain("c")
+	})
+
+	it("wires autoAccept onToggle to setAutoAccept", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false, runChecks: true },
+		})
+
+		await showStagingMenu(files, true)
+
+		const callOpts = vi.mocked(selectWithToggles).mock.calls[0]?.[0]
+		const autoAcceptToggle = callOpts?.toggles.find((t) => t.key === "autoAccept")
+		await autoAcceptToggle?.onToggle?.(true)
 		expect(setAutoAccept).toHaveBeenCalledWith(true)
-
-		await callOpts?.onToggle?.(false)
+		await autoAcceptToggle?.onToggle?.(false)
 		expect(setAutoAccept).toHaveBeenCalledWith(false)
 	})
 
-	it("returns 'autogroup' when user selects auto-group", async () => {
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "autogroup", autoAccept: false })
+	it("wires runChecks onToggle to setRunChecks", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false, runChecks: true },
+		})
 
-		const result = await showStagingMenu(files, false)
+		await showStagingMenu(files, true)
+
+		const callOpts = vi.mocked(selectWithToggles).mock.calls[0]?.[0]
+		const runChecksToggle = callOpts?.toggles.find((t) => t.key === "runChecks")
+		await runChecksToggle?.onToggle?.(true)
+		expect(setRunChecks).toHaveBeenCalledWith(true)
+		await runChecksToggle?.onToggle?.(false)
+		expect(setRunChecks).toHaveBeenCalledWith(false)
+	})
+
+	it("omits the runChecks toggle when hasChecks is false", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false },
+		})
+
+		await showStagingMenu(files, false)
+
+		const callOpts = vi.mocked(selectWithToggles).mock.calls[0]?.[0]
+		const keys = callOpts?.toggles.map((t) => t.key)
+		expect(keys).toContain("autoAccept")
+		expect(keys).not.toContain("runChecks")
+		// Without .cmintrc, getRunChecks should not even be consulted.
+		expect(getRunChecks).not.toHaveBeenCalled()
+	})
+
+	it("returns 'autogroup' when user selects auto-group", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "autogroup",
+			toggles: { autoAccept: false, runChecks: true },
+		})
+
+		const result = await showStagingMenu(files, true)
 
 		expect(result).toBe("autogroup")
 	})
 
 	it("returns 'checks' when user selects checks", async () => {
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "checks", autoAccept: false })
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "checks",
+			toggles: { autoAccept: false, runChecks: true },
+		})
 
 		const result = await showStagingMenu(files, true)
 
@@ -94,9 +167,12 @@ describe("showStagingMenu auto-accept integration", () => {
 	})
 
 	it("returns null when user cancels", async () => {
-		vi.mocked(selectWithAutoAccept).mockResolvedValue({ value: "cancel", autoAccept: false })
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "cancel",
+			toggles: { autoAccept: false, runChecks: true },
+		})
 
-		const result = await showStagingMenu(files, false)
+		const result = await showStagingMenu(files, true)
 
 		expect(result).toBeNull()
 	})

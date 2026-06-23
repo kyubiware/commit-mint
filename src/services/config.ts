@@ -27,6 +27,7 @@ export interface Config {
 	proxy?: string
 	timeout?: string
 	"auto-accept"?: string
+	"run-checks"?: string
 }
 
 const defaults: Config = {

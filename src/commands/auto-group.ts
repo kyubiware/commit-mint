@@ -29,6 +29,7 @@ import {
 	PROVIDER_ENV_KEYS,
 	type ProviderName,
 } from "../services/provider.js"
+import { getRunChecks } from "../services/run-checks.js"
 import { showGroupedFiles, showGroupingConfirmation, showGroupProgress } from "../ui/grouping.js"
 import { type RecoveryResult, showRecoveryMenu } from "../ui/recovery-menu.js"
 import { reviewCommitMessage } from "../ui/review-message.js"
@@ -88,8 +89,13 @@ export async function runAutoGroupFlow(
 		return "committed"
 	}
 
-	// Run user-defined pre-commit checks upfront on all files (before AI grouping)
-	if (!flags.noCheck) {
+	// Run user-defined pre-commit checks upfront on all files (before AI
+	// grouping). Checks run unless the per-invocation `--noCheck` flag is set
+	// OR the persisted `run-checks` preference is false (toggled via `c`
+	// hotkey in the staging menu when auto-group is launched from interactive
+	// mode).
+	const shouldRunChecks = !flags.noCheck && (await getRunChecks())
+	if (shouldRunChecks) {
 		const { getRepoRoot } = await import("../services/git.js")
 		const repoRoot = await getRepoRoot()
 		// Convert cwd-relative paths from `filterExcludedFiles` to repo-root-relative

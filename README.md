@@ -107,16 +107,26 @@ each with its own message. The flow:
    — the remaining groups are not committed.
 
 `cmint` (no `-a`) shows a staging menu for any number of changed files
-(including one). The menu is also the only place the `a` hotkey toggles
-auto-accept mode, so it always runs:
+(including one). The menu is also the only place the `a` and `c` hotkeys
+toggle persistent modes, so it always runs:
 
 ```
-What do you want to stage?
-  Stage all files
-  Select files...
-  Auto-group into commits
-  Run checks
+Stage files for commit:
+  ⚡ Auto-accept: OFF (press `a` to toggle)
+  🛡 Pre-commit checks: ON (press `c` to toggle)
+
+  ● Stage all files
+  ○ Auto-group into commits
+  ○ Run checks
+  ...
 ```
+
+- **`a` — Auto-accept** — skip the message review step. Persisted in
+  `~/.commit-mint` as `auto-accept`.
+- **`c` — Pre-commit checks** — when OFF, skip the user-defined pre-commit
+  checks (the `.cmintrc` phase). Persisted in `~/.commit-mint` as
+  `run-checks` (default `true`/ON). Same effect as `cmint -N`, but persists
+  across runs. Only shown when a `.cmintrc` file exists.
 
 ## Self-update (`cmint update`)
 
@@ -228,6 +238,8 @@ and **eslint**. Unrecognized output falls back to a single raw-stderr entry.
 | `type`           | —                    | Force commit type prefix                          |
 | `timeout`        | `10000`              | AI request timeout in ms                          |
 | `proxy`          | —                    | Proxy URL for API requests                        |
+| `auto-accept`    | `false`              | `a` hotkey: skip message review step              |
+| `run-checks`     | `true`               | `c` hotkey: run user-defined pre-commit checks    |
 | `--agent`       | `false`              | Headless JSON-output mode for AI agents           |
 
 API key lookup checks the env var first, then the INI file.

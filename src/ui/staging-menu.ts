@@ -2,8 +2,9 @@ import * as p from "@clack/prompts"
 import { bold, cyan, dim, green, red, yellow } from "kolorist"
 import { getAutoAccept, setAutoAccept } from "../services/auto-accept.js"
 import type { ChangedFile } from "../services/git.js"
+import { getRunChecks, setRunChecks } from "../services/run-checks.js"
 import { debug } from "../utils/debug.js"
-import { selectWithAutoAccept } from "./auto-accept-select.js"
+import { selectWithToggles, type ToggleOption } from "./toggle-select.js"
 
 export interface StagingChoice {
 	files: string[] // selected file paths to stage
@@ -63,14 +64,40 @@ export async function showStagingMenu(
 	const initialAutoAccept = await getAutoAccept()
 	debug("showStagingMenu: initial auto-accept=%s", initialAutoAccept)
 
-	const selectResult = await selectWithAutoAccept<
+	// Only register the run-checks toggle when .cmintrc is present — without
+	// a config, there's nothing to run, and showing the toggle would be
+	// misleading.
+	const initialRunChecks = hasChecks ? await getRunChecks() : true
+	debug("showStagingMenu: initial run-checks=%s", initialRunChecks)
+
+	const toggles: ToggleOption[] = [
+		{
+			key: "autoAccept",
+			hotkey: "a",
+			label: "Auto-accept",
+			icon: "⚡",
+			initial: initialAutoAccept,
+			onToggle: (next) => setAutoAccept(next),
+		},
+		...(hasChecks
+			? [
+					{
+						key: "runChecks",
+						hotkey: "c",
+						label: "Pre-commit checks",
+						icon: "🛡",
+						initial: initialRunChecks,
+						onToggle: (next) => setRunChecks(next),
+					} satisfies ToggleOption,
+				]
+			: []),
+	]
+
+	const selectResult = await selectWithToggles<
 		"autogroup" | "all" | "checks" | "staged" | "select" | "cancel"
 	>({
 		message: "Stage files for commit:",
-		initialAutoAccept,
-		onToggle: async (next) => {
-			await setAutoAccept(next)
-		},
+		toggles,
 		options: [
 			// "Auto-group into commits" only makes sense with multiple files —
 			// one file is already its own group.
@@ -118,7 +145,12 @@ export async function showStagingMenu(
 	}
 
 	const choice = selectResult.value
-	debug("showStagingMenu: choice=%s autoAccept=%s", choice, selectResult.autoAccept)
+	debug(
+		"showStagingMenu: choice=%s autoAccept=%s runChecks=%s",
+		choice,
+		selectResult.toggles.autoAccept,
+		selectResult.toggles.runChecks,
+	)
 
 	if (p.isCancel(choice) || choice === "cancel") {
 		return null
