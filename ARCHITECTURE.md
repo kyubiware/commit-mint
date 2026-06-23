@@ -10,8 +10,8 @@
 - Plugin-style error parsers for 5 hook tools (lint-staged, biome, tsc, vitest/jest, eslint) with raw fallback — plus a separate `parseCheckErrors` for cmint check output format (`[tool]` prefix blocks)
 - 4-tier diff compression for AI prompt efficiency (full → strip context → cap hunks → file summary)
 - Provider abstraction supporting Groq, Cerebras, and Mistral via OpenAI-compatible API
-- Interactive staging menu shown for **every** commit (select files, auto-group, run checks from cmint config, stage all, commit staged) — also the only entry point to the auto-accept `a` hotkey toggle. "Select files..." is hidden when there is only one file
-- Auto-accept mode toggled via `a` hotkey in the staging menu; when ON, skips the message review step. Persisted to `~/.commit-mint` as `auto-accept` key
+- Interactive staging menu shown for **every** commit (select files, auto-group, run checks from cmint config, stage all, commit staged) — also the only entry point to the auto-accept `a` hotkey and skip-checks `c` hotkey toggles. "Select files..." is hidden when there is only one file
+- Auto-accept mode toggled via `a` hotkey in the staging menu; when ON, skips the message review step. Skip-checks mode toggled via `c` hotkey; when ON, bypasses user-defined pre-commit checks. Both persisted to `~/.commit-mint` as `auto-accept` and `skip-checks` keys
 - User-defined pre-commit checks via cmint config files (14 naming patterns, glob matching via picomatch, function commands)
 - Shared interactive check-execution pipeline (`runCheckPhaseInteractive`) used by both `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging), encapsulating: `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`
 - Recursive recovery menu with 6 options (copy, view full output, skip hooks, restage, edit message, cancel)
@@ -47,15 +47,15 @@
 **Services Layer:**
 - Purpose: Encapsulate external system interactions and business logic
 - Location: `src/services/`
-- Contains: `git.ts` (git operations), `ai.ts` (multi-provider AI generation with 4-tier diff compression), `grouping.ts` (AI file grouping + low-quality detection + orphan validation), `grouping-parser.ts` (robust JSON array recovery for grouping responses), `grouping-reunite.ts` (deterministic test/source reunification), `provider.ts` (multi-provider abstraction: Groq, Cerebras, Mistral), `hooks.ts` (hook error parsing + `parseCheckErrors` for cmint check output + tool check summary), `hook-progress.ts` (real-time hook progress parser), `checks.ts` (user-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution, function commands), `config.ts` (INI config at `~/.commit-mint`), `clipboard.ts` (cross-platform clipboard), `auto-accept.ts` (auto-accept preference persistence), `update-check.ts` (stale-while-revalidate background update notifier), `updater.ts` (npm registry version check + global install)
+- Contains: `git.ts` (git operations), `ai.ts` (multi-provider AI generation with 4-tier diff compression), `grouping.ts` (AI file grouping + low-quality detection + orphan validation), `grouping-parser.ts` (robust JSON array recovery for grouping responses), `grouping-reunite.ts` (deterministic test/source reunification), `provider.ts` (multi-provider abstraction: Groq, Cerebras, Mistral), `hooks.ts` (hook error parsing + `parseCheckErrors` for cmint check output + tool check summary), `hook-progress.ts` (real-time hook progress parser), `checks.ts` (user-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution, function commands), `config.ts` (INI config at `~/.commit-mint`), `clipboard.ts` (cross-platform clipboard — wl-copy --foreground, wl-copy fallback, xclip, xsel, pbcopy), `auto-accept.ts` (auto-accept preference persistence), `skip-checks.ts` (skip-checks preference persistence), `update-check.ts` (stale-while-revalidate background update notifier), `updater.ts` (npm registry version check + global install)
 - Depends on: `execa`, `groq-sdk`, `ini`, `picomatch`, `jiti`, `semver`, Node.js built-ins
 - Used by: Commands layer
 
 **UI Layer:**
 - Purpose: Interactive terminal UI for recovery decisions, staging, check failures, and grouping confirmation
 - Location: `src/ui/`
-- Contains: `recovery-menu.ts` (recovery TUI with 6 options + clipboard state tracking), `staging-menu.ts` (staging menu with file list display, status labels, multi-select fallback, auto-accept `a` hotkey integration), `check-failure-menu.ts` (check failure menu with 5 options + tsc/eslint/vitest inline diagnostics), `auto-accept-select.ts` (custom `@clack/core` `SelectPrompt` with inline `a`-hotkey toggle for auto-accept mode), `check-summary.ts` (check spinner summary utility with per-tool display), `review-message.ts` (message review: use-as-is/edit/cancel/regenerate), `grouping.ts` (grouping confirmation UI + grouped files display + progress display + grouping summary)
-- Depends on: `@clack/prompts`, `@clack/core`, `kolorist`, Services (clipboard, hooks, git, auto-accept)
+- Contains: `recovery-menu.ts` (recovery TUI with 6 options + clipboard state tracking), `staging-menu.ts` (staging menu with file list display, status labels, multi-select fallback, auto-accept `a` hotkey and skip-checks `c` hotkey toggle integration via `selectWithToggles`), `check-failure-menu.ts` (check failure menu with 5 options + tsc/eslint/vitest inline diagnostics), `toggle-select.ts` (generic `@clack/core` `SelectPrompt` wrapper with extensible inline hotkey toggles — auto-accept via `a`, skip-checks via `c`), `check-summary.ts` (check spinner summary utility with per-tool display), `review-message.ts` (message review: use-as-is/edit/cancel/regenerate), `grouping.ts` (grouping confirmation UI + grouped files display + progress display + grouping summary)
+- Depends on: `@clack/prompts`, `@clack/core`, `kolorist`, Services (clipboard, hooks, git, auto-accept, skip-checks)
 - Used by: Commands layer (`commit.ts`, `auto-group.ts`, `commit-utils.ts`, `staging.ts`)
 
 **Utils Layer:**
@@ -77,7 +77,7 @@
 6. Get changed files list — `src/services/git.ts:getChangedFiles`
 7. Stage changes:
    - `--auto` flag: delegate to `runAutoGroupFlow` in `src/commands/auto-group.ts`
-   - Otherwise: show interactive staging menu (auto-group into commits / commit staged only / stage all / run checks / select files / cancel) — `src/ui/staging-menu.ts:showStagingMenu`. The menu is shown for any number of changed files (including 1) because it is the only entry point to the auto-accept `a` hotkey toggle. "Select files..." is hidden when there is only one file.
+   - Otherwise: show interactive staging menu (auto-group into commits / commit staged only / stage all / run checks / select files / cancel) — `src/ui/staging-menu.ts:showStagingMenu`. The menu is shown for any number of changed files (including 1) because it is the only entry point to the auto-accept `a` hotkey and skip-checks `c` hotkey toggles. "Select files..." is hidden when there is only one file.
      - "Auto-group into commits" delegates to `runAutoGroupFlow` in `src/commands/auto-group.ts`
      - "Run checks" runs `runAllChecks` then refreshes changed files list
      - "Stage all" stages all files
@@ -211,9 +211,9 @@
 - Pattern: Interface with `{ message, timestamp, repoPath }` shape
 
 **Config:**
-- Purpose: User configuration for AI provider, per-provider model keys, locale, max-length, type, timeout, proxy, auto-accept
+- Purpose: User configuration for AI provider, per-provider model keys, locale, max-length, type, timeout, proxy, auto-accept, skip-checks
 - Location: `src/services/config.ts:15`
-- Pattern: Interface with optional string-keyed properties; provider-specific model keys (`model_groq`, `model_cerebras`, `model_mistral`); auto-accept key
+- Pattern: Interface with optional string-keyed properties; provider-specific model keys (`model_groq`, `model_cerebras`, `model_mistral`); auto-accept key; skip-checks key
 
 **ProviderConfig / ProviderName:**
 - Purpose: Provider definitions for Groq, Cerebras, Mistral — base URL, default model, env key
@@ -235,10 +235,10 @@
 - Location: `src/ui/staging-menu.ts:8`
 - Pattern: Interface with `{ files: string[], all: boolean }`
 
-**AutoAcceptOption / AutoAcceptSelectOptions / AutoAcceptResult:**
-- Purpose: Types for the auto-accept select prompt — wraps `@clack/core` `SelectPrompt` with `a`-hotkey toggle
-- Location: `src/ui/auto-accept-select.ts:15-34`
-- Pattern: `AutoAcceptResult<T> { value: T, autoAccept: boolean }`
+**ToggleOption / ToggleSelectOptions / ToggleSelectResult:**
+- Purpose: Types for the generic toggle-enabled select prompt — wraps `@clack/core` `SelectPrompt` with extensible inline hotkey toggles (auto-accept via `a`, skip-checks via `c`)
+- Location: `src/ui/toggle-select.ts:22-56`
+- Pattern: `ToggleSelectResult<T> { value: T, toggles: Record<string, boolean> }`
 
 **CommitGroup:**
 - Purpose: A logical group of files for auto-group flow
@@ -293,12 +293,12 @@
 - Responsibilities: Run preflight setup prompt, check for updates upfront, orchestrate entire commit lifecycle including retry mode, staging menu, excluded files handling, pre-commit checks, AI message generation, review (with auto-accept), and recovery
 
 **agentCommand:**
-- Location: `src/commands/agent.ts:54`
+- Location: `src/commands/agent.ts:42`
 - Triggers: `cmint --agent`
 - Responsibilities: Headless non-interactive auto-group with JSON output, validates flags, asserts repo, auto-stages, runs checks, generates groups and messages, emits structured JSON, sets documented exit codes
 
 **configCommand:**
-- Location: `src/commands/config.ts:216`
+- Location: `src/commands/config.ts:217`
 - Triggers: `cmint config`
 - Responsibilities: Interactive TUI for reading/writing `~/.commit-mint` INI values — provider selection, API key, model, locale, max-length, type, timeout, proxy
 
@@ -313,7 +313,7 @@
 - Responsibilities: Detect package manager, fetch latest version from npm registry, confirm and run global install command
 
 **runAutoGroupFlow:**
-- Location: `src/commands/auto-group.ts:49`
+- Location: `src/commands/auto-group.ts:50`
 - Triggers: "Auto-group into commits" from staging menu, or `cmint --auto` / `cmint auto`
 - Responsibilities: Filter excluded files, run pre-commit checks (with check failure menu + retry loop), call AI grouping with provider (including low-quality retry and test/source reunification), show confirmation, sequential multi-commit with per-group recovery
 
@@ -323,9 +323,9 @@
 - Responsibilities: Load cached commit message, attempt commit via `commitWithRecovery`, exit with error on failure
 
 **handleStaging:**
-- Location: `src/commands/staging.ts:14`
+- Location: `src/commands/staging.ts:20`
 - Triggers: Changed files in normal mode
-- Responsibilities: Interactive staging loop — auto-group, run checks, stage all, commit staged, select files; returns selected files or delegates to auto-group flow
+- Responsibilities: Interactive staging loop — auto-group, run checks, stage all, commit staged, select files; calls `showStagingMenu` which uses `selectWithToggles` from `toggle-select.ts` for auto-accept (`a`) and skip-checks (`c`) hotkey toggles; returns selected files or delegates to auto-group flow
 
 **showCheckFailureMenu:**
 - Location: `src/ui/check-failure-menu.ts:235`
@@ -364,6 +364,8 @@
 
 **Agent mode:** `src/utils/agent.ts` — module-level boolean gate (`setAgentMode`/`isAgentMode`). Defines `AgentResult`, `AgentCommit` types, `EXIT_CODES` constants, and `writeAgentResult` for JSON stdout output. Used by `agentCommand` and checked by UI functions to skip interactive prompts.
 
-**Auto-accept:** `src/services/auto-accept.ts` — persists auto-accept preference to `~/.commit-mint` as `auto-accept` key. Toggled via `a` hotkey in the staging menu (`src/ui/auto-accept-select.ts`). When enabled, skips the message review step in `commitCommand`.
+**Auto-accept:** `src/services/auto-accept.ts` — persists auto-accept preference to `~/.commit-mint` as `auto-accept` key. Toggled via `a` hotkey in the staging menu (`src/ui/toggle-select.ts`). When enabled, skips the message review step in `commitCommand`.
 
-**Storage:** `src/services/config.ts` — INI-format config at `~/.commit-mint`. Defaults merged via spread. Keys: GROQ_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, provider, model, model_groq, model_cerebras, model_mistral, locale, max-length, type, timeout, proxy, auto-accept.
+**Skip-checks:** `src/services/skip-checks.ts` — persists skip-checks preference to `~/.commit-mint` as `skip-checks` key. Toggled via `c` hotkey in the staging menu (`src/ui/toggle-select.ts`). When enabled, bypasses user-defined pre-commit checks in the staging flow.
+
+**Storage:** `src/services/config.ts` — INI-format config at `~/.commit-mint`. Defaults merged via spread. Keys: GROQ_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, provider, model, model_groq, model_cerebras, model_mistral, locale, max-length, type, timeout, proxy, auto-accept, skip-checks.
