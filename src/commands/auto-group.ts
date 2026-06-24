@@ -41,6 +41,7 @@ export interface CommitFlags {
 	retry: boolean
 	auto: boolean
 	agent: boolean
+	single?: boolean
 	message?: string
 	hint?: string
 	noCheck?: boolean

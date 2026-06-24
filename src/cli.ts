@@ -65,6 +65,12 @@ cli(
 				description: "AI agent mode: non-interactive auto-group with JSON output",
 				default: false,
 			},
+			single: {
+				type: Boolean,
+				description: "Stage all files as a single commit with AI message (non-interactive)",
+				alias: "s",
+				default: false,
+			},
 		},
 		commands: [
 			command(

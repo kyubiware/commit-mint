@@ -9,6 +9,7 @@ import {
 	getRepoRoot,
 	getStagedDiff,
 	getStatusShort,
+	stageAll,
 } from "../services/git.js"
 import {
 	formatProviderName,
@@ -66,7 +67,11 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 	const s = spinner()
 
 	try {
-		if (flags.auto) {
+		if (flags.single) {
+			debug("Single-commit mode: staging all files")
+			await stageAll()
+			// Fall through to post-staging (checks → diff → generate → commit)
+		} else if (flags.auto) {
 			if (flags.message) {
 				outro(red("--message flag is not compatible with auto-group mode."))
 				return
@@ -186,7 +191,7 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 	}
 
 	// Review message (with optional code review) — skipped when auto-accept is ON
-	const autoAccept = await getAutoAccept()
+	const autoAccept = flags.single || (await getAutoAccept())
 	if (autoAccept) {
 		debug("Auto-accept ON: skipping review step")
 		log.info(message)
