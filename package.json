@@ -4,16 +4,16 @@
 	"description": "🌿 AI-powered git commit tool — auto-group changed files, generate messages, run pre-commit checks",
 	"type": "module",
 	"bin": {
-		"cmint": "./dist/cli.mjs"
+		"cmint": "./dist/bin.mjs"
 	},
 	"files": [
 		"dist"
 	],
 	"scripts": {
-		"build": "tsdown src/cli.ts --format esm --dts --clean",
-		"dev": "tsx src/cli.ts",
-		"dev:auto": "tsx src/cli.ts -a",
-		"dev:debug": "tsx src/cli.ts --debug",
+		"build": "tsdown src/bin.ts --format esm --dts --clean",
+		"dev": "tsx src/bin.ts",
+		"dev:auto": "tsx src/bin.ts -a",
+		"dev:debug": "tsx src/bin.ts --debug",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write --unsafe .",
 		"typecheck": "tsc --noEmit",
