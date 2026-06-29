@@ -4,6 +4,7 @@ import { getAutoAccept, setAutoAccept } from "../services/auto-accept.js"
 import type { ChangedFile } from "../services/git.js"
 import { getRunChecks, setRunChecks } from "../services/run-checks.js"
 import { debug } from "../utils/debug.js"
+import { fileMultiSelect } from "./file-multiselect.js"
 import { selectWithToggles, type ToggleOption } from "./toggle-select.js"
 
 export interface StagingChoice {
@@ -173,14 +174,14 @@ export async function showStagingMenu(
 	}
 
 	// Multi-select
-	const selected = await p.multiselect({
-		message: "Select files to stage:",
-		options: sorted.map((f) => ({
+	const selected = await fileMultiSelect(
+		"Select files to stage:",
+		sorted.map((f) => ({
 			label: `${statusLabel(f.status)}  ${f.path}`,
 			value: f.path,
 		})),
-		required: true,
-	})
+		{ required: true },
+	)
 
 	if (p.isCancel(selected)) {
 		return null

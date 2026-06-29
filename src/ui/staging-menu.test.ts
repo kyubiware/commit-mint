@@ -6,6 +6,10 @@ vi.mock("./toggle-select.js", () => ({
 	isToggleSelectCancel: vi.fn((v: unknown) => typeof v === "symbol"),
 }))
 
+vi.mock("./file-multiselect.js", () => ({
+	fileMultiSelect: vi.fn(),
+}))
+
 vi.mock("../services/auto-accept.js", () => ({
 	getAutoAccept: vi.fn(),
 	setAutoAccept: vi.fn(),
@@ -18,8 +22,7 @@ vi.mock("../services/run-checks.js", () => ({
 
 vi.mock("@clack/prompts", () => ({
 	note: vi.fn(),
-	multiselect: vi.fn(),
-	isCancel: vi.fn(() => false),
+	isCancel: vi.fn((v: unknown) => typeof v === "symbol"),
 }))
 
 vi.mock("kolorist", () => ({
@@ -37,6 +40,7 @@ vi.mock("../utils/debug.js", () => ({
 
 import { getAutoAccept, setAutoAccept } from "../services/auto-accept.js"
 import { getRunChecks, setRunChecks } from "../services/run-checks.js"
+import { fileMultiSelect } from "./file-multiselect.js"
 import { showStagingMenu } from "./staging-menu.js"
 import { selectWithToggles } from "./toggle-select.js"
 
@@ -171,6 +175,30 @@ describe("showStagingMenu toggle integration", () => {
 			value: "cancel",
 			toggles: { autoAccept: false, runChecks: true },
 		})
+
+		const result = await showStagingMenu(files, true)
+
+		expect(result).toBeNull()
+	})
+
+	it("opens fileMultiSelect when user picks 'Select files...' and returns the selection", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "select",
+			toggles: { autoAccept: false, runChecks: true },
+		})
+		vi.mocked(fileMultiSelect).mockResolvedValue(["src/a.ts", "src/b.ts"])
+
+		const result = await showStagingMenu(files, true)
+
+		expect(result).toEqual({ files: ["src/a.ts", "src/b.ts"], all: false })
+	})
+
+	it("returns null when user cancels fileMultiSelect", async () => {
+		vi.mocked(selectWithToggles).mockResolvedValue({
+			value: "select",
+			toggles: { autoAccept: false, runChecks: true },
+		})
+		vi.mocked(fileMultiSelect).mockResolvedValue(Symbol.for("clack:cancel"))
 
 		const result = await showStagingMenu(files, true)
 
