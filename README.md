@@ -1,66 +1,91 @@
-# commit-mint
+<div align="center">
+
+# 🌿 commit-mint
+
+**AI-powered git commits — auto-group, generate, recover**
 
 [![npm](https://img.shields.io/npm/v/@kyubiware/commit-mint.svg)](https://www.npmjs.com/package/@kyubiware/commit-mint)
 [![CI](https://img.shields.io/github/actions/workflow/status/kyubiware/commit-mint/ci.yml)](https://github.com/kyubiware/commit-mint/actions)
 [![GitHub stars](https://img.shields.io/github/stars/kyubiware/commit-mint?style=flat&logo=github)](https://github.com/kyubiware/commit-mint)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-- Runs your pre-commit checks on changed files, then digests failures into a
-  structured error report you can copy to clipboard — paste straight into a
-  coding agent.
-- Looks at what you changed and uses AI to group files into logical commits.
-- Generates a good commit message for each group.
+`commit-mint` (`cmint`) is an AI-powered wrapper around `git commit` that wraps
+the full lifecycle — stage, generate, attempt, recover — and never leaves you
+holding a lost message and a wall of raw stderr.
 
-## Install
+</div>
+
+> Every AI commit tool generates a message, calls `git commit`, and dies on
+> hook failure. `commit-mint` parses the failure, hands you a recovery menu
+> (copy errors to clipboard, skip hooks, re-stage and retry), and caches the
+> message so `cmint -r` resumes exactly where you stopped.
+
+`cmint` runs your pre-commit checks, generates a conventional commit message
+with AI, attempts the commit, and on failure shows a recovery menu with the
+parsed error report ready to paste into a coding agent.
+
+## Quick Start
 
 ```bash
 npm install -g @kyubiware/commit-mint
 ```
 
-Or run without installing:
-
 ```bash
-npx @kyubiware/commit-mint
+cmint config  # set your API key and preferred provider
 ```
 
-Requires Node.js 18+ and git. Run `cmint config` once to set the AI provider and
-API key. The key is saved to `~/.commit-mint` (INI).
+```bash
+cmint # interactive cli for committing changes
+```
 
-## Usage
+## Why commit-mint?
+
+- [x] **Checks run before the AI call.** A failing check short-circuits before
+      any API call. With `lint-staged`, the hook fires after the message is
+      already finalized — a broken check wastes the message.
+- [x] **Failures get a recovery menu, not raw stderr.** Output from `biome`,
+      `tsc`, `vitest`/`jest`, `eslint`, and `lint-staged` is parsed into
+      structured errors and presented in a 6-option menu.
+- [x] **Live retry.** Fix the error in another terminal, pick "Retry checks" in
+      the menu — no need to exit and re-run `cmint`.
+- [x] **Auto-group mode.** Ten changed files across three concerns become three
+      commits, each with its own AI-generated message.
+- [x] **Message caching on failure.** Cached to `~/.cache/commit-mint/`. `cmint
+      -r` re-attempts with the same message after you fix the underlying issue.
+
+## Comparison
+
+|                                                          | commit-mint | aicommits | opencommit | cz-git  | commitizen |
+| -------------------------------------------------------- | :---------: | :-------: | :--------: | :-----: | :--------: |
+| **Auto-group files into commits**                        | ✅          | —         | —          | —       | —          |
+| **Hook failure recovery menu**                           | ✅          | —         | —          | —       | —          |
+| **Pre-commit checks in-flow** (`.cmintrc`)               | ✅          | —         | —          | —       | —          |
+| **AI message generation**                                | ✅          | ✅        | ✅         | ✅      | —          |
+| **No OpenAI required** (Groq, Cerebras, Mistral)         | ✅          | ✅        | —          | —       | n/a        |
+| **Message review before commit**                         | ✅          | ✅        | ✅         | ✅      | ✅         |
+| **Zero-prompt auto mode**                                | ✅          | ✅        | ✅         | —       | —          |
+| **Conventional commits**                                 | ✅          | ✅        | ✅         | ✅      | ✅         |
+| **Retry cached message** (`cmint -r`)                    | ✅          | —         | —          | ✅      | —          |
+
+## Command Reference
 
 ```bash
 cmint             # interactive: stage → checks → review → commit
 cmint -a          # auto-group, generate messages, commit everything
+cmint -s          # stage all tracked files in single commit, skip staging menu
 cmint config      # edit provider, model, locale, etc.
 cmint update      # update cmint to the latest published version
 ```
 
-See [all flags](#all-flags) for the full list.
-
-## Providers
-
-| Provider | Env var           | Default model        |
-| -------- | ----------------- | -------------------- |
-| Groq     | `GROQ_API_KEY`    | `openai/gpt-oss-20b` |
-| Cerebras | `CEREBRAS_API_KEY` | `gpt-oss-120b`     |
-| Mistral  | `MISTRAL_API_KEY` | `mistral-small`      |
-
-All three use OpenAI-compatible APIs and have a generous free tier. Groq uses the official SDK; Cerebras and
-Mistral use a built-in fetch client. Per-provider model overrides: set
-`model_groq`, `model_cerebras`, or `model_mistral` in `~/.commit-mint`.
-Resolution order is `model_<provider>` → `model` → provider default.
-
-`cmint config` walks you through provider, API key, model, locale, and
-timeout.
-
-## Pre-flight checks (`.cmintrc`)
+## Pre-flight Checks (`.cmintrc`)
 
 `.cmintrc` is commit-mint's pre-commit check system. The config syntax is
-identical to [lint-staged](https://github.com/okonet/lint-staged) — glob keys
+identical to [`lint-staged`](https://github.com/okonet/lint-staged) — glob keys
 mapping to shell commands — but the checks run inside commit-mint's flow, not
 as a separate git hook.
 
-**Already using lint-staged?** Rename your config file to `.cmintrc` — same
-syntax, no changes needed.
+> **Already using `lint-staged`?** Rename your config file to `.cmintrc` — same
+> syntax, no changes needed.
 
 Run `cmint config` to auto-generate one, or create it manually:
 
@@ -75,116 +100,37 @@ export default {
 (This is the actual `.cmintrc.ts` commit-mint ships with for its own
 development.)
 
-Checks run inside commit-mint's flow for three reasons:
-
-**1. Checks run before the AI call.** A failing check short-circuits before
-any API call. With lint-staged, the hook fires after the message is already
-finalized — a broken check wastes the message.
-
-**2. Failures get a recovery menu, not raw stderr.** commit-mint parses biome,
-tsc, vitest/jest, eslint, and lint-staged output into structured errors, then
-lets you copy the error report to clipboard — paste straight into a coding
-agent.
-
-**3. Live retry.** Fix the error in another terminal, pick "Retry checks" in
-the menu — no need to exit and re-run `cmint`.
-
-Config shape details, file name patterns, and the failure menu are documented
-[below](#config-reference).
-
-## Auto-group mode (`-a`)
-
-When you have 10 changed files across 3 concerns, `cmint -a` makes 3 commits,
-each with its own message. The flow:
-
-1. Excluded files (lockfiles, build output) are committed upfront with a
-   hardcoded `chore: update lockfile` message.
-2. `.cmintrc` checks run on the remaining files.
-3. The AI groups files by intent.
-4. Each group is staged, diffed, and committed sequentially. A per-group
-   message is generated, and (in non-`auto` mode) reviewed.
-5. A hook failure on any group shows the recovery menu and stops the sequence
-   — the remaining groups are not committed.
-
-`cmint` (no `-a`) shows a staging menu for any number of changed files
-(including one). The menu is also the only place the `a` and `c` hotkeys
-toggle persistent modes, so it always runs:
+When a check fails:
 
 ```
-Stage files for commit:
-  ⚡ Auto-accept: OFF (press `a` to toggle)
-  🛡 Pre-commit checks: ON (press `c` to toggle)
+Pre-commit check failed
+  • [biome] src/services/ai.ts:12:1 lint/suspicious/noExplicitAny — Unexpected any...
+  • [tsc] src/services/ai.ts:55:18 — error TS2345: Argument of type 'string' is...
 
-  ● Stage all files
-  ○ Auto-group into commits
-  ○ Run checks
-  ...
+What do you want to do?
+  Copy error report to clipboard
+  View full error output
+  Retry checks
+  Skip checks and commit
+  Cancel
 ```
 
-- **`a` — Auto-accept** — skip the message review step. Persisted in
-  `~/.commit-mint` as `auto-accept`.
-- **`c` — Pre-commit checks** — when OFF, skip the user-defined pre-commit
-  checks (the `.cmintrc` phase). Persisted in `~/.commit-mint` as
-  `run-checks` (default `true`/ON). Same effect as `cmint -N`, but persists
-  across runs. Only shown when a `.cmintrc` file exists.
+- **Copy error report** — copies the raw stderr to clipboard (formatted for an
+  AI agent).
+- **View full error output** — shows the raw stderr.
+- **Retry checks** — re-runs the same checks. Fix in another terminal, hit
+  enter, no restart.
+- **Skip checks and commit** — proceed to commit despite the failure.
+- **Cancel** — exit. The message is cached so `cmint -r` re-attempts with the
+  same message.
 
-## Self-update (`cmint update`)
+For `tsc` failures specifically, the summary includes up to 3 `file:line:column`
+diagnostics inline, with a `+N more` line if there are more.
 
-`cmint update` checks the npm registry for a newer version and, if one exists,
-runs the appropriate global install command for your package manager (detected
-from `npm_config_user_agent` — npm, pnpm, yarn, or bun; falls back to npm).
+Config shape, file name patterns, and glob matching rules are documented in
+the [API Reference](#pre-flight-check-config).
 
-- If you're already on the latest version, it exits silently.
-- Otherwise it prints `current → latest` and asks for confirmation before
-  running the install (live npm output is streamed to your terminal).
-- `cmint update -y` (or `--yes`) skips the confirmation prompt — useful in
-  scripts.
-
-## AI Agent Mode
-
-`cmint --agent` runs non-interactively with JSON output for AI coding agents.
-
-| Combination | Behavior |
-|---|---|
-| `--agent` | Auto-group, AI generates, no review, JSON output |
-| `--agent --message "msg"` | Single-commit mode, use provided message, no AI |
-| `--agent --retry` | ERROR: incompatible (exit 1) |
-| `--agent --noCheck` | Skip user-defined checks |
-| `--agent --hint "..."` | Pass hint to AI |
-| `--agent --debug` | Verbose logging to stderr |
-
-### JSON output schema
-
-The command returns a single JSON object to stdout.
-
-```json
-{"status":"success","commits":[{"message":"feat: add X","hash":"abc123","files":["src/a.ts"]}]}
-{"status":"no_changes","commits":[]}
-{"status":"failure","commits":[],"errors":["error detail"]}
-{"status":"cancelled","commits":[]}
-```
-
-### Exit codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Generic error |
-| 2 | No changes |
-| 3 | Git error |
-| 4 | AI error |
-| 5 | Check failure |
-| 6 | Hook failure |
-
-### AI Coding Agent Integration
-
-For OpenCode or other AI coding environments, you can install cmint as a skill:
-
-```bash
-npx skills add kyubiware/commit-mint
-```
-
-## Recovery menu
+## Recovery Menu
 
 When a git hook blocks the commit, commit-mint parses the output and shows:
 
@@ -219,62 +165,82 @@ Hook progress is shown in real time during the commit — `[STARTED]` /
 `[COMPLETED]` / `[FAILED]` markers from each task are streamed to stderr as
 they happen.
 
-Errors are parsed from **lint-staged**, **biome**, **tsc**, **vitest**/**jest**,
-and **eslint**. Unrecognized output falls back to a single raw-stderr entry.
+Errors are parsed from **`lint-staged`**, **`biome`**, **`tsc`**,
+**`vitest`/`jest`**, and **`eslint`**. Unrecognized output falls back to a
+single raw-stderr entry.
 
-## Configuration
+## API Reference
 
-`~/.commit-mint` (INI format). Run `cmint config` to edit.
+### Subcommands
 
-| Key              | Default              | Description                                       |
-| ---------------- | -------------------- | ------------------------------------------------- |
-| `provider`       | `groq`               | `groq`, `cerebras`, or `mistral`                  |
-| `model`          | `openai/gpt-oss-20b` | Default model; overridable per provider           |
-| `model_groq`     | —                    | Override default when provider is `groq`          |
-| `model_cerebras` | —                    | Override default when provider is `cerebras`      |
-| `model_mistral`  | —                    | Override default when provider is `mistral`       |
-| `locale`         | `en`                 | Locale for generated messages                     |
-| `max-length`     | `100`                | Max commit message length                         |
-| `type`           | —                    | Force commit type prefix                          |
-| `timeout`        | `10000`              | AI request timeout in ms                          |
-| `proxy`          | —                    | Proxy URL for API requests                        |
-| `auto-accept`    | `false`              | `a` hotkey: skip message review step              |
-| `run-checks`     | `true`               | `c` hotkey: run user-defined pre-commit checks    |
-| `--agent`       | `false`              | Headless JSON-output mode for AI agents           |
+| Name | Description |
+|---|---|
+| `cmint` | Default. Run the interactive commit flow. |
+| `cmint auto` | Alias for `cmint -a`. Auto-group, generate, commit. |
+| `cmint config` | Interactive TUI for reading/writing `~/.commit-mint`. |
+| `cmint logs` | Show the debug log from the last session. |
+| `cmint update` | Update cmint to the latest published version. |
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `-a`, `--auto` | Auto-stage tracked files and auto-group into commits |
+| `-m`, `--message <msg>` | Use your own message instead of AI generation |
+| `-H`, `--hint <hint>` | Context hint to the AI (e.g. `"refactor only"`) |
+| `-r`, `--retry` | Retry last failed commit (uses cached message) |
+| `-N`, `--noCheck` | Skip pre-flight checks |
+| `-d`, `--debug` | Debug logging to stderr |
+| `--agent` | Headless JSON-output mode for AI coding agents |
+| `-y`, `--yes` | Skip confirmation prompt (used with `cmint update`) |
+
+### Config Keys
+
+Stored in `~/.commit-mint` (INI format). Run `cmint config` to edit.
+
+| Key | Default | Description |
+|---|---|---|
+| `provider` | `groq` | `groq`, `cerebras`, or `mistral` |
+| `model` | `openai/gpt-oss-20b` | Default model; overridable per provider |
+| `model_groq` | — | Override default when provider is `groq` |
+| `model_cerebras` | — | Override default when provider is `cerebras` |
+| `model_mistral` | — | Override default when provider is `mistral` |
+| `locale` | `en` | Locale for generated messages |
+| `max-length` | `100` | Max commit message length |
+| `type` | — | Force commit type prefix |
+| `timeout` | `10000` | AI request timeout in ms |
+| `proxy` | — | Proxy URL for API requests |
+| `auto-accept` | `false` | `a` hotkey: skip message review step |
+| `run-checks` | `true` | `c` hotkey: run user-defined pre-commit checks |
 
 API key lookup checks the env var first, then the INI file.
 
-## Excluded files
+### Environment Variables
 
-These patterns are filtered from AI generation by default:
+| Variable | Used by | Required |
+|---|---|---|
+| `GROQ_API_KEY` | `cmint` (when `provider=groq`) | Yes, unless set in `~/.commit-mint` |
+| `CEREBRAS_API_KEY` | `cmint` (when `provider=cerebras`) | Yes, unless set in `~/.commit-mint` |
+| `MISTRAL_API_KEY` | `cmint` (when `provider=mistral`) | Yes, unless set in `~/.commit-mint` |
+| `https_proxy` / `HTTPS_PROXY` | All providers | Optional — overrides `proxy` config key |
+| `NO_COLOR` | All UI | Optional — disables `kolorist` color output |
 
-```
-package-lock.json
-node_modules/**  dist/**  build/**  .next/**  coverage/**
-*.log  *.min.js  *.min.css  *.lock  .DS_Store
-```
+### Providers
 
-When every staged file matches an exclude, commit-mint uses a hardcoded
-message: `chore: update lockfile` for lockfiles, `chore: update generated
-files` for the rest. In auto-group mode, lockfiles (`package-lock.json`,
-`pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`) are promoted
-alongside their companion manifest (e.g. `package-lock.json` stays with
-`package.json`).
+| Provider | Env var | Default model | Client |
+|---|---|---|---|
+| `groq` | `GROQ_API_KEY` | `openai/gpt-oss-20b` | `groq-sdk` |
+| `cerebras` | `CEREBRAS_API_KEY` | `gpt-oss-120b` | Built-in fetch |
+| `mistral` | `MISTRAL_API_KEY` | `mistral-small` | Built-in fetch |
 
-## All flags
+All three use OpenAI-compatible APIs and have a generous free tier. Per-
+provider model overrides: set `model_groq`, `model_cerebras`, or `model_mistral`
+in `~/.commit-mint`. Resolution order is `model_<provider>` → `model` →
+provider default.
 
-| Flag                    | Description                                      |
-| ----------------------- | ------------------------------------------------ |
-| `-m`, `--message`       | Use your own message instead of AI generation    |
-| `-H`, `--hint`          | Context hint to the AI (e.g. "refactor only")    |
-| `-r`, `--retry`         | Retry last failed commit (cached message)        |
-| `-N`, `--noCheck`       | Skip pre-flight checks                           |
-| `-d`, `--debug`         | Debug logging to stderr                          |
-| `--agent`               | Headless JSON mode for AI coding agents          |
+### Pre-flight Check Config
 
-## Config reference
-
-### Config file names
+#### File names
 
 Checked in this order. First match wins.
 
@@ -295,18 +261,23 @@ cmint.config.cjs
 cmint.config.cts
 ```
 
-`.ts`/`.cts`/`.cjs` are loaded via [jiti](https://github.com/unjs/jiti) — use
-TypeScript syntax freely. `.json` is parsed as plain JSON. Everything else is
-loaded as ESM with `import default`.
+`.ts`/`.cts`/`.cjs` are loaded via [`jiti`](https://github.com/unjs/jiti) —
+use TypeScript syntax freely. `.json` is parsed as plain JSON. Everything else
+is loaded as ESM with `import default`.
 
-### Config shape
+#### Shape
 
-A default export. Each key is a [picomatch](https://github.com/micromatch/picomatch)
+A default export. Each key is a [`picomatch`](https://github.com/micromatch/picomatch)
 glob; each value is a command string, a string array, or a function that
 returns either.
 
-**String commands** get matched files appended as trailing arguments. Files
-with spaces in their paths are quoted automatically.
+| Form | Behavior |
+|---|---|
+| `string` | Matched files are appended as trailing arguments. Paths with spaces are quoted automatically. |
+| `string[]` | Commands run sequentially, each as a separate command. First failure stops the run. |
+| `(files) => string \| string[]` | Function receives the matched files. Use when the command depends on the file list. |
+
+**String command:**
 
 ```ts
 export default {
@@ -314,8 +285,7 @@ export default {
 };
 ```
 
-**String arrays** run sequentially, each as a separate command. First failure
-stops the run.
+**String array:**
 
 ```ts
 export default {
@@ -323,9 +293,7 @@ export default {
 };
 ```
 
-**Function commands** receive the matched files and return a command or array
-of commands. Use these when the command depends on the file list, or you want
-multiple commands from one glob:
+**Function command:**
 
 ```ts
 export default {
@@ -334,14 +302,14 @@ export default {
 };
 ```
 
-### Glob matching
+#### Glob matching
 
 - Globs without a `/` match at any depth (e.g. `*.ts` matches `src/foo.ts` and
   `a/b/c.ts`).
 - Dotfiles are included.
 - Paths with spaces are quoted before being appended.
 
-### Behavior
+#### Behavior
 
 - Checks run after `git add`, before the AI call.
 - Globs are processed in declaration order.
@@ -349,43 +317,128 @@ export default {
   and skips remaining globs.
 - 60s timeout per command. ENOENT (command not found) and timeouts are
   reported back to the menu as their own error.
-- Skipped entirely with `cmint -N`.
+- Skipped entirely with `cmint -N` or the `c` hotkey toggle.
 
-### Failure menu
+### Exit Codes
 
-When a check fails, the same `parseHookErrors` pipeline that handles git
-hooks runs, and a menu appears:
+`cmint --agent` uses 7 documented exit codes. Interactive `cmint` always exits
+with `0` or `1`.
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Generic error |
+| 2 | No changes |
+| 3 | Git error |
+| 4 | AI error |
+| 5 | Check failure |
+| 6 | Hook failure |
+
+### Agent JSON Output Schema
+
+The command returns a single JSON object to stdout. See the [Agent
+Flow](#agent-flow---agent) section for invocation patterns.
+
+```ts
+type AgentResult = {
+	status: "success" | "no_changes" | "failure" | "cancelled";
+	commits: Array<{
+		message: string;
+		hash: string;
+		files: string[];
+		groupName?: string;
+	}>;
+	errors?: string[];
+};
+```
+
+### Excluded Files
+
+These patterns are filtered from AI generation by default:
 
 ```
-Pre-commit check failed
-  • [biome] src/services/ai.ts:12:1 lint/suspicious/noExplicitAny — Unexpected any...
-  • [tsc] src/services/ai.ts:55:18 — error TS2345: Argument of type 'string' is...
-
-What do you want to do?
-  Copy error report to clipboard
-  View full error output
-  Retry checks
-  Skip checks and commit
-  Cancel
+package-lock.json
+node_modules/**  dist/**  build/**  .next/**  coverage/**
+*.log  *.min.js  *.min.css  *.lock  .DS_Store
 ```
 
-- **Copy error report** — copies the raw stderr (works with `wl-copy`,
-  `xclip`, `xsel`, or `pbcopy`).
-- **View full error output** — shows the raw stderr.
-- **Retry checks** — re-runs the same checks. Fix in another terminal, hit
-  enter, no restart.
-- **Skip checks and commit** — proceed to commit despite the failure.
-- **Cancel** — exit. The message is cached so `cmint -r` re-attempts with the
-  same message.
+When every staged file matches an exclude, commit-mint uses a hardcoded
+message: `chore: update lockfile` for lockfiles, `chore: update generated
+files` for the rest. In auto-group mode, lockfiles (`package-lock.json`,
+`pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`) are promoted
+alongside their companion manifest (e.g. `package-lock.json` stays with
+`package.json`).
 
-For tsc failures specifically, the summary includes up to 3 file:line:column
-diagnostics inline, with a `+N more` line if there are more.
+### Debug Logs
+
+`cmint --debug` streams timestamped log lines to stderr. The same log is
+persisted to `~/.cache/commit-mint/debug.log` with a `--- session <ISO
+timestamp> ---` header on every CLI invocation.
+
+View the last session's log:
+
+```bash
+cmint logs              # entire last session
+cmint logs -n 50        # last 50 lines
+```
 
 ## Requirements
 
-- Node.js 18+
-- git
-- Optional, for clipboard copy: `wl-copy`, `xclip`, `xsel`, or `pbcopy`
+- [x] Node.js 18+
+- [x] git
+- [x] One of: `GROQ_API_KEY`, `CEREBRAS_API_KEY`, or `MISTRAL_API_KEY`
+      (or run `cmint config` to set one)
+- [x] Optional, for clipboard copy: `wl-copy`, `xclip`, `xsel`, or `pbcopy`
+
+## Support
+
+- [GitHub Issues](https://github.com/kyubiware/commit-mint/issues) — bug
+  reports and feature requests
+- [GitHub Discussions](https://github.com/kyubiware/commit-mint/discussions) —
+  questions and ideas
+- [npm](https://www.npmjs.com/package/@kyubiware/commit-mint) — releases and
+  install stats
+
+## Built With
+
+- [TypeScript](https://www.typescriptlang.org/) — strict, ESM-only, `tsdown`
+  bundler
+- [@clack/prompts](https://github.com/natemoo-re/clack) + [`kolorist`](https://github.com/marvinhagemeister/kolorist) —
+  interactive TUI primitives
+- [`cleye`](https://github.com/alloc/cleye) — CLI argument parsing
+- [`execa`](https://github.com/sindresorhus/execa) — subprocess execution with
+  clean stderr capture
+- [`groq-sdk`](https://github.com/groq/groq-typescript) — official Groq client
+- [`picomatch`](https://github.com/micromatch/picomatch) — glob matching
+- [`jiti`](https://github.com/unjs/jiti) — TypeScript config loader
+- [`ini`](https://github.com/npm/ini) — INI config parsing
+- [`semver`](https://github.com/npm/node-semver) — version comparison for
+  `cmint update`
+
+## AI Agent Skill
+
+> If you're an AI coding agent, this section is for you.
+
+Install `commit-mint` as a skill in OpenCode, Cursor, or any agent that loads
+[npm skills](https://www.npmjs.com/package/skills):
+
+```bash
+npx skills add kyubiware/commit-mint
+```
+
+The skill teaches the agent the non-interactive agent flow:
+
+1. Run `cmint --agent` (or `cmint --agent --noCheck` to skip pre-commit
+   checks).
+2. Parse the JSON `AgentResult` from stdout.
+3. Read the `process.exitCode` against the [Exit Codes](#exit-codes) table.
+
+The agent never has to interact with the recovery menu — failures are
+surfaced as `status: "failure"` with an `errors[]` array, or one of the
+`--agent`-specific exit codes (3 = git, 4 = AI, 5 = check, 6 = hook).
+
+For OpenCode, the skill is also shipped with the project at
+[`skills/cmint/SKILL.md`](skills/cmint/SKILL.md).
 
 ## License
 
