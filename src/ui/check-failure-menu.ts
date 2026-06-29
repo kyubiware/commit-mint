@@ -231,6 +231,34 @@ function truncate(message: string, maxLength: number): string {
 	return `${collapsed.slice(0, Math.max(0, maxLength - 1))}…`
 }
 
+/**
+ * Filter noisy lines from vitest/jest test output.
+ * Strips stack trace frames (❯ prefix) and horizontal rule separators (⎯⎯⎯ lines),
+ * while preserving FAIL lines, assertion messages, diff content, and the final summary.
+ */
+function filterTestOutput(output: string): string {
+	const lines = output.split("\n")
+	const filtered = lines.filter((line) => {
+		// Remove stack trace frames: lines starting with whitespace + ❯
+		if (/^\s*[❯>]\s/.test(line)) return false
+
+		// Remove horizontal rule separators (lines of box-drawing chars or dashes)
+		const stripped = line.replace(/\s/g, "")
+		if (stripped.length > 10) {
+			const dashCount = (stripped.match(/[⎯\-═]/g) ?? []).length
+			if (dashCount / stripped.length > 0.5) return false
+		}
+
+		return true
+	})
+
+	// Collapse runs of 3+ blank lines into 2
+	return filtered
+		.join("\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Check failure menu with retry option
 export async function showCheckFailureMenu(
 	errors: HookError[],
@@ -283,7 +311,7 @@ export async function showCheckFailureMenu(
 
 		switch (choice) {
 			case "copy": {
-				const ok = await copyToClipboard(rawStderr)
+				const ok = await copyToClipboard(filterTestOutput(rawStderr))
 				if (ok) {
 					clipboardCopied = true
 					p.log.step(green("Copied to clipboard."))
@@ -293,7 +321,7 @@ export async function showCheckFailureMenu(
 				continue
 			}
 			case "view": {
-				p.note(rawStderr.trim() || "(no raw output)", "Full error output")
+				p.note(filterTestOutput(rawStderr) || "(no raw output)", "Full error output")
 				continue
 			}
 			case "retry": {
