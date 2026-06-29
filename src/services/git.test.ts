@@ -301,6 +301,48 @@ describe("getChangedFiles", () => {
 		await getChangedFiles()
 		expect(mockExeca).toHaveBeenCalledWith("git", ["status", "--short", "--untracked-files=all"])
 	})
+
+	it("parses rename lines to extract only the new path", async () => {
+		mockExeca.mockResolvedValue({
+			stdout: "R  packages/web/src/pages/old.tsx -> packages/web/src/hooks/new.tsx",
+		})
+		const result = await getChangedFiles()
+		expect(result).toEqual([
+			{
+				status: "R",
+				path: "packages/web/src/hooks/new.tsx",
+				staged: true,
+			},
+		])
+	})
+
+	it("parses staged-and-modified rename (RM) correctly", async () => {
+		mockExeca.mockResolvedValue({
+			stdout: "RM packages/web/src/pages/old.tsx -> packages/web/src/hooks/new.tsx",
+		})
+		const result = await getChangedFiles()
+		expect(result).toEqual([
+			{
+				status: "RM",
+				path: "packages/web/src/hooks/new.tsx",
+				staged: true,
+			},
+		])
+	})
+
+	it("parses unstaged working-tree rename ( R) correctly", async () => {
+		mockExeca.mockResolvedValue({
+			stdout: " R packages/web/src/pages/old.tsx -> packages/web/src/hooks/new.tsx",
+		})
+		const result = await getChangedFiles()
+		expect(result).toEqual([
+			{
+				status: "R",
+				path: "packages/web/src/hooks/new.tsx",
+				staged: false,
+			},
+		])
+	})
 })
 
 describe("stageFiles", () => {

@@ -139,9 +139,21 @@ export async function getChangedFiles(): Promise<ChangedFile[]> {
 		.filter(Boolean)
 		.map((line) => {
 			const indexStatus = line[0]
+			const worktreeStatus = line[1]
+			let path = line.slice(3)
+			// `git status --short` formats rename lines as:
+			//   R  oldpath -> newpath
+			// `git add` (used by stageFiles()) expects only the current path,
+			// so extract the path after ` -> ` when either status is R.
+			if (indexStatus === "R" || worktreeStatus === "R") {
+				const arrow = path.lastIndexOf(" -> ")
+				if (arrow !== -1) {
+					path = path.slice(arrow + 4)
+				}
+			}
 			return {
 				status: line.slice(0, 2).trim(),
-				path: line.slice(3),
+				path,
 				staged: indexStatus !== " " && indexStatus !== "?",
 			}
 		})
