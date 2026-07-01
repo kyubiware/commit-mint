@@ -3,40 +3,33 @@ import { green, red } from "kolorist"
 import type { CheckObserver, CheckResult } from "../services/checks.js"
 
 /**
- * Creates a live check progress display using `@clack/prompts` primitives.
+ * Creates a live check progress display.
  *
- * - A single "Running checks…" spinner stays active while checks run.
- * - As each check completes, a `log.info` line is emitted below the spinner.
- *   The spinner's `ansiEscapes.eraseLine` + `cursorTo(0)` rendering only
- *   rewrites its own line, so `log.info` lines accumulate cleanly below
- *   with no cursor-positioning issues from wrapped terminal lines.
- * - When all checks finish, the spinner is stopped with a pass/fail summary.
+ * - Each check gets its own line. While a check runs, a spinner animates
+ *   in the status position. When it completes, the spinner becomes a ✓ or ✗.
+ * - There is no separate "Running checks…" header — the spinner IS the
+ *   check line.
+ * - When all checks finish, a `log.info` summary line is emitted.
  *
  * Returns a `CheckObserver` (pass directly to `runAllChecks`) plus a `finish()`
- * method that stops the spinner with the aggregated result.
+ * method that prints the final summary.
  */
 export function createCheckProgressDisplay(): CheckObserver & {
 	finish(ok: boolean): void
 } {
 	const s = spinner()
-	s.start("Running checks…")
 
 	return {
-		onStart() {
-			// Spinner stays generic — individual check results appear below
+		onStart(_tool: string, _command: string, _matchedFiles: string[]) {
+			s.start(_tool)
 		},
 
 		onResult(result: CheckResult) {
-			const icon = result.ok ? green("✓") : red("✗")
-			log.info(`  ${icon} ${result.tool}`)
+			s.stop(result.ok ? `✓ ${result.tool}` : `✗ ${result.tool}`)
 		},
 
 		finish(ok: boolean) {
-			if (ok) {
-				s.stop(green("All checks passed"))
-			} else {
-				s.stop(red("Some checks failed"))
-			}
+			log.info(ok ? green("All checks passed") : red("Some checks failed"))
 		},
 	}
 }
