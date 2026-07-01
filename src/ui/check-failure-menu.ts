@@ -35,6 +35,8 @@ interface EslintDiagnostic {
 interface TestFailure {
 	file: string
 	name: string
+	/** The assertion error message (e.g. "AssertionError: expected 1 to be 2") */
+	message?: string
 }
 
 function formatCheckFailureSummary(errors: HookError[]): string {
@@ -142,9 +144,13 @@ function extractEslintDiagnostics(raw: string): EslintDiagnostic[] {
 function extractTestFailures(raw: string): TestFailure[] {
 	const failures: TestFailure[] = []
 	const seen = new Set<string>()
-	for (const line of raw.split("\n")) {
+	const lines = raw.split("\n")
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]
 		const match = TEST_FILE_FAIL.exec(line)
 		if (!match) continue
+
 		const file = (match[1] ?? "").trim()
 		const name = (match[2] ?? "").trim()
 		if (!file || !name) continue
@@ -152,9 +158,43 @@ function extractTestFailures(raw: string): TestFailure[] {
 		// Dedupe — vitest can repeat the same FAIL line across reruns captured in one block
 		if (seen.has(key)) continue
 		seen.add(key)
-		failures.push({ file, name })
+
+		const message = scanForwardForMessage(lines, i + 1, TEST_FILE_FAIL)
+		failures.push({ file, name, message })
 	}
 	return failures
+}
+
+/**
+ * Scan forward from `startIndex` to find the first assertion error message line
+ * after a FAIL header. Skips blank lines, separator dashes, stack frames,
+ * subsequent FAIL lines, and vitest summary footers.
+ */
+function scanForwardForMessage(
+	lines: string[],
+	startIndex: number,
+	testFileFailRegex: RegExp,
+): string | undefined {
+	for (let j = startIndex; j < lines.length; j++) {
+		const rawLine = lines[j]
+		const trimmed = rawLine.trim()
+		if (!trimmed) continue
+		// Skip separator lines (dashes, box-drawing chars)
+		const stripped = trimmed.replace(/\s/g, "")
+		if (stripped.length > 5) {
+			const dashCount = (stripped.match(/[⎯\-═]/g) ?? []).length
+			if (dashCount / stripped.length > 0.5) continue
+		}
+		// Skip stack trace frames
+		if (/^\s*[❯>]\s/.test(rawLine)) continue
+		// Skip another FAIL line (next test failure)
+		if (testFileFailRegex.test(trimmed)) break
+		// Skip vitest summary footer
+		if (/^(Test Files|Tests)\s/.test(trimmed)) break
+		// This is the error message line
+		return truncate(trimmed, MAX_SUMMARY_LINE_LENGTH)
+	}
+	return undefined
 }
 
 function formatTestFailureSummary(failures: TestFailure[], tool: string): string {
@@ -168,17 +208,20 @@ function formatTestFailureSummary(failures: TestFailure[], tool: string): string
 	const lines = [`  ${red("•")} [${tool}] ${total} failed ${testNoun} in ${fileCount} ${fileNoun}`]
 
 	// Group visible failures by file to avoid repeating the file path
-	const byFile = new Map<string, string[]>()
+	const byFile = new Map<string, Array<{ name: string; message?: string }>>()
 	for (const failure of visible) {
-		const names = byFile.get(failure.file) ?? []
-		names.push(failure.name)
-		byFile.set(failure.file, names)
+		const entries = byFile.get(failure.file) ?? []
+		entries.push({ name: failure.name, message: failure.message })
+		byFile.set(failure.file, entries)
 	}
 
-	for (const [file, names] of byFile) {
+	for (const [file, entries] of byFile) {
 		lines.push(`    ${truncate(file, MAX_SUMMARY_LINE_LENGTH)}`)
-		for (const name of names) {
-			lines.push(`      ${red("×")} ${truncate(name, MAX_SUMMARY_LINE_LENGTH)}`)
+		for (const entry of entries) {
+			lines.push(`      ${red("×")} ${truncate(entry.name, MAX_SUMMARY_LINE_LENGTH)}`)
+			if (entry.message) {
+				lines.push(`        ${dim("→")} ${entry.message}`)
+			}
 		}
 	}
 

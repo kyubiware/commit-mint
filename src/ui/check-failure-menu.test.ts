@@ -22,7 +22,7 @@ vi.mock("../utils/debug.js", () => ({
 }))
 
 import { isCancel, note, select } from "@clack/prompts"
-import { red } from "kolorist"
+import { dim, red } from "kolorist"
 import { copyToClipboard } from "../services/clipboard.js"
 
 const mockErrors = [
@@ -159,6 +159,7 @@ describe("showCheckFailureMenu", () => {
 		expect(summary).toContain("[vitest] 1 failed test in 1 file")
 		expect(summary).toContain("sample.test.ts")
 		expect(summary).toContain(`${red("×")} describe > fails`)
+		expect(summary).toContain(`${dim("→")} AssertionError: expected 1 to be 2`)
 		expect(summary).not.toContain("+")
 		expect(summary).not.toContain("more failed")
 	})
@@ -193,9 +194,12 @@ describe("showCheckFailureMenu", () => {
 		// First 3 visible (grouped under their files)
 		expect(summary).toContain("a.test.ts")
 		expect(summary).toContain(`${red("×")} describe > first`)
+		expect(summary).toContain(`${dim("→")} AssertionError: boom one`)
 		expect(summary).toContain(`${red("×")} describe > second`)
+		expect(summary).toContain(`${dim("→")} AssertionError: boom two`)
 		expect(summary).toContain("b.test.ts")
 		expect(summary).toContain(`${red("×")} other > third`)
+		expect(summary).toContain(`${dim("→")} Error: boom three`)
 		// Hidden tests
 		expect(summary).toContain("+2 more failed tests. View full output for details.")
 		// Hidden test names not shown
