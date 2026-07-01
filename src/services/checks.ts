@@ -46,6 +46,15 @@ export interface CheckResults {
 }
 
 /**
+ * Observer for real-time check progress.
+ * `onStart` fires before each command executes; `onResult` fires after completion.
+ */
+export interface CheckObserver {
+	onStart?: (tool: string, command: string, matchedFiles: string[]) => void
+	onResult?: (result: CheckResult) => void
+}
+
+/**
  * Detect whether the repo has a cmint config file.
  * Returns the config file path, or null if none found.
  */
@@ -243,7 +252,7 @@ function resolveCommands(
 /**
  * Run resolved commands for a single glob entry, appending results.
  * Function-originated commands run as-is; string commands get matched files appended.
- * Returns false if any command fails (for fail-fast signaling).
+ * All commands run regardless of individual failures.
  */
 async function runCommandsForGlob(
 	cmds: ResolvedCommand[],
@@ -251,29 +260,32 @@ async function runCommandsForGlob(
 	timeout: number,
 	results: CheckResult[],
 	repoRoot: string,
-): Promise<boolean> {
+	observer?: CheckObserver,
+): Promise<void> {
 	for (const { command, fromFunction } of cmds) {
 		const fullCommand = fromFunction ? command : buildCommand(command, matchedFiles)
+		const tool = extractToolName(fullCommand) ?? fullCommand.split(" ")[0]
 		debug("runCommandsForGlob: running '%s'", fullCommand)
+		observer?.onStart?.(tool, fullCommand, matchedFiles)
 		const result = await runCommand(fullCommand, timeout, repoRoot)
 		results.push({ ...result, files: matchedFiles })
+		observer?.onResult?.(result)
 		if (!result.ok) {
-			debug("runCommandsForGlob: check failed, stopping (fail-fast)")
-			return false
+			debug("runCommandsForGlob: check failed, continuing to next command")
 		}
 	}
-	return true
 }
 
 /**
  * Run all user-defined checks from .cmintrc against staged files.
  * Returns a no-op result when no config exists.
- * Fail-fast: stops on first error.
+ * All checks always run; failures are collected and returned together.
  */
 export async function runAllChecks(
 	repoRoot: string,
 	stagedFiles: string[],
 	timeout: number,
+	observer?: CheckObserver,
 ): Promise<CheckResults> {
 	debug("runAllChecks: %d staged files, checking for config in %s", stagedFiles.length, repoRoot)
 
@@ -298,8 +310,7 @@ export async function runAllChecks(
 		debug("runAllChecks: pattern '%s' matched %d files", glob, matchedFiles.length)
 
 		const cmds = resolveCommands(commands, matchedFiles)
-		const ok = await runCommandsForGlob(cmds, matchedFiles, timeout, results, repoRoot)
-		if (!ok) return { ok: false, results }
+		await runCommandsForGlob(cmds, matchedFiles, timeout, results, repoRoot, observer)
 	}
 
 	const ok = results.every((r) => r.ok)

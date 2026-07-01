@@ -558,7 +558,7 @@ describe("runAllChecks", () => {
 		})
 	})
 
-	it("stops on first failure (fail-fast)", async () => {
+	it("runs all checks even when some fail (no fail-fast)", async () => {
 		tmpDir = await mkdtemp(join(tmpdir(), "cmint-test-"))
 		await writeFile(
 			join(tmpDir, ".cmintrc.ts"),
@@ -571,18 +571,25 @@ describe("runAllChecks", () => {
 			.mockRejectedValueOnce(new Error("ENOENT"))
 			.mockRejectedValueOnce(new Error("ENOENT"))
 			.mockResolvedValueOnce(undefined)
-		// eslint fails first
-		mockExeca.mockResolvedValueOnce({
-			failed: true,
-			stdout: "",
-			stderr: "lint error",
-			all: "lint error",
-		})
+		// eslint fails, prettier passes — both should run
+		mockExeca
+			.mockResolvedValueOnce({
+				failed: true,
+				stdout: "",
+				stderr: "lint error",
+				all: "lint error",
+			})
+			.mockResolvedValueOnce({
+				failed: false,
+				stdout: "",
+				stderr: "",
+				all: "",
+			})
 
 		const result = await runAllChecks(tmpDir, ["src/foo.ts", "package.json"], 5000)
 		expect(result.ok).toBe(false)
-		expect(result.results).toHaveLength(1)
-		expect(mockExeca).toHaveBeenCalledTimes(1)
+		expect(result.results).toHaveLength(2)
+		expect(mockExeca).toHaveBeenCalledTimes(2)
 	})
 
 	it("runs all checks when all pass (multiple globs)", async () => {
