@@ -55,7 +55,7 @@ export async function runCheckPhaseInteractive(
 	debug("Running user checks on %d files...", files.length)
 	const display = createCheckProgressDisplay()
 	let checkResults = await runAllChecks(repoRoot, files, timeout, display)
-	display.finish()
+	display.finish(checkResults.ok)
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
 
 	while (!checkResults.ok) {
@@ -74,7 +74,7 @@ export async function runCheckPhaseInteractive(
 			if (onRetry) await onRetry()
 			const retryDisplay = createCheckProgressDisplay()
 			checkResults = await runAllChecks(repoRoot, files, timeout, retryDisplay)
-			retryDisplay.finish()
+			retryDisplay.finish(checkResults.ok)
 			debug("Retry check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
 			continue
 		}

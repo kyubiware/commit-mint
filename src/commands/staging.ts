@@ -57,8 +57,8 @@ export async function handleStaging(
 			if (configPath) {
 				const display = createCheckProgressDisplay()
 				const ckResult = await runAllChecks(repoRoot, allFiles, 60000, display)
-				const { failed } = display.finish()
-				if (failed > 0) {
+				display.finish(ckResult.ok)
+				if (!ckResult.ok) {
 					for (const r of ckResult.results.filter((r) => !r.ok))
 						log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`)
 				}
@@ -110,7 +110,7 @@ export async function runPreCommitChecks(
 	const stagedFileList = await getStagedFiles()
 	if (stagedFileList.length === 0) return
 
-	// Delegate the check pipeline (detectConfig → spinner → runAllChecks →
+	// Delegate the check pipeline (detectConfig → progress display → runAllChecks →
 	// retry loop with failure menu) to the shared check-phase module. On retry,
 	// re-stage files so fixes made in another terminal between the original run
 	// and the retry land in the index before checks re-run.
