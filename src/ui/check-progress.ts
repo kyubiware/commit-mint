@@ -18,18 +18,29 @@ export function createCheckProgressDisplay(): CheckObserver & {
 	finish(ok: boolean): void
 } {
 	const s = spinner()
+	const toolResults: { tool: string; ok: boolean }[] = []
+	let started = false
 
 	return {
 		onStart(_tool: string, _command: string, _matchedFiles: string[]) {
-			s.start(_tool)
+			if (!started) {
+				s.start(_tool)
+				started = true
+			} else {
+				s.message(_tool)
+			}
 		},
 
 		onResult(result: CheckResult) {
-			s.stop(result.ok ? `✓ ${result.tool}` : `✗ ${result.tool}`)
+			toolResults.push({ tool: result.tool, ok: result.ok })
+			s.message(`${result.ok ? "✓" : "✗"} ${result.tool}`)
 		},
 
 		finish(ok: boolean) {
-			log.info(ok ? green("All checks passed") : red("Some checks failed"))
+			s.stop(ok ? green("All checks passed") : red("Some checks failed"))
+			if (toolResults.length > 0) {
+				log.info(toolResults.map((r) => `  ${r.ok ? green("✓") : red("✗")} ${r.tool}`).join("\n"))
+			}
 		},
 	}
 }

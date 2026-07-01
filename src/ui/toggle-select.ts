@@ -139,8 +139,10 @@ function buildPromptRenderer<T>(
 	const toggleList = opts.toggles
 	return function (this: SelectPrompt<{ value: T }>) {
 		const sym = symbol(this.state)
-		const statusLines = toggleList.map((t) => renderToggleState(t, state[t.hotkey])).join("\n")
-		const header = `${sym}  ${opts.message}\n${dim(S_BAR)}  ${statusLines}`
+		const statusLines = toggleList
+			.map((t) => `${dim(S_BAR)}  ${renderToggleState(t, state[t.hotkey])}`)
+			.join("\n")
+		const header = `${sym}  ${opts.message}\n${statusLines}`
 
 		switch (this.state) {
 			case "submit": {
