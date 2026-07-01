@@ -297,7 +297,12 @@ describe("runAutoGroupFlow check integration", () => {
 
 		// Check phase ran exactly once with all included file paths
 		expect(runAllChecks).toHaveBeenCalledTimes(1)
-		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/a.ts", "src/b.ts"], 60000)
+		expect(runAllChecks).toHaveBeenCalledWith(
+			"/tmp/test-repo",
+			["src/a.ts", "src/b.ts"],
+			60000,
+			expect.any(Object),
+		)
 		// Recovery menu for checks was NOT shown (checks passed)
 		expect(showCheckFailureMenu).not.toHaveBeenCalled()
 		// Both groups committed normally
