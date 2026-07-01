@@ -1,19 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // Hoisted mock fns
-const {
-	mockDetectConfig,
-	mockRunAllChecks,
-	mockStopCheckSpinner,
-	mockShowCheckFailureMenu,
-	mockParseCheckErrors,
-} = vi.hoisted(() => ({
-	mockDetectConfig: vi.fn(),
-	mockRunAllChecks: vi.fn(),
-	mockStopCheckSpinner: vi.fn(),
-	mockShowCheckFailureMenu: vi.fn(),
-	mockParseCheckErrors: vi.fn(),
-}))
+const { mockDetectConfig, mockRunAllChecks, mockShowCheckFailureMenu, mockParseCheckErrors } =
+	vi.hoisted(() => ({
+		mockDetectConfig: vi.fn(),
+		mockRunAllChecks: vi.fn(),
+		mockShowCheckFailureMenu: vi.fn(),
+		mockParseCheckErrors: vi.fn(),
+	}))
 
 vi.mock("../services/checks.js", () => ({
 	detectConfig: mockDetectConfig,
@@ -24,16 +18,8 @@ vi.mock("../services/hooks.js", () => ({
 	parseCheckErrors: mockParseCheckErrors,
 }))
 
-vi.mock("../ui/check-summary.js", () => ({
-	stopCheckSpinner: mockStopCheckSpinner,
-}))
-
 vi.mock("../ui/check-failure-menu.js", () => ({
 	showCheckFailureMenu: mockShowCheckFailureMenu,
-}))
-
-vi.mock("@clack/prompts", () => ({
-	spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
 }))
 
 vi.mock("../utils/debug.js", () => ({
@@ -44,7 +30,6 @@ beforeEach(() => {
 	vi.resetAllMocks()
 	mockDetectConfig.mockResolvedValue("/fake/repo/.cmintrc")
 	mockRunAllChecks.mockResolvedValue({ ok: true, results: [] })
-	mockStopCheckSpinner.mockReturnValue(undefined)
 	mockParseCheckErrors.mockReturnValue([])
 })
 
@@ -57,7 +42,12 @@ describe("runCheckPhaseInteractive", () => {
 
 		expect(outcome).toBe("passed")
 		expect(mockRunAllChecks).toHaveBeenCalledTimes(1)
-		expect(mockRunAllChecks).toHaveBeenCalledWith("/fake/repo", ["src/a.ts"], 60000)
+		expect(mockRunAllChecks).toHaveBeenCalledWith(
+			"/fake/repo",
+			["src/a.ts"],
+			60000,
+			expect.any(Object),
+		)
 	})
 
 	it("returns 'passed' without running checks when no .cmintrc exists", async () => {

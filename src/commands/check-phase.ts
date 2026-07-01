@@ -1,8 +1,7 @@
-import { spinner } from "@clack/prompts"
 import { detectConfig, runAllChecks } from "../services/checks.js"
 import { parseCheckErrors } from "../services/hooks.js"
 import { showCheckFailureMenu } from "../ui/check-failure-menu.js"
-import { stopCheckSpinner } from "../ui/check-summary.js"
+import { createCheckProgressDisplay } from "../ui/check-progress.js"
 import { debug } from "../utils/debug.js"
 
 /**
@@ -28,7 +27,7 @@ export type CheckRetryCallback = () => Promise<void>
  *
  * Single entry point for the check-execution pipeline shared by `runPreCommitChecks`
  * (post-staging, normal commit flow) and `runAutoGroupFlow` (pre-staging, auto-group
- * flow). Encapsulates: detectConfig guard → spinner → runAllChecks → retry loop with
+ * flow). Encapsulates: detectConfig guard → live progress display → runAllChecks → retry loop with
  * `showCheckFailureMenu`.
  *
  * Caller responsibilities:
@@ -54,10 +53,9 @@ export async function runCheckPhaseInteractive(
 	if (!configPath) return "passed"
 
 	debug("Running user checks on %d files...", files.length)
-	const ck = spinner()
-	ck.start("Running checks...")
-	let checkResults = await runAllChecks(repoRoot, files, timeout)
-	stopCheckSpinner(ck, checkResults)
+	const display = createCheckProgressDisplay()
+	let checkResults = await runAllChecks(repoRoot, files, timeout, display)
+	display.finish()
 	debug("Check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
 
 	while (!checkResults.ok) {
@@ -74,9 +72,9 @@ export async function runCheckPhaseInteractive(
 		if (menuResult === "retried") {
 			debug("Re-running checks after retry...")
 			if (onRetry) await onRetry()
-			ck.start("Running checks...")
-			checkResults = await runAllChecks(repoRoot, files, timeout)
-			stopCheckSpinner(ck, checkResults)
+			const retryDisplay = createCheckProgressDisplay()
+			checkResults = await runAllChecks(repoRoot, files, timeout, retryDisplay)
+			retryDisplay.finish()
 			debug("Retry check results: ok=%s, count=%d", checkResults.ok, checkResults.results.length)
 			continue
 		}
