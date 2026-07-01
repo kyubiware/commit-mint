@@ -439,7 +439,12 @@ describe("commitCommand check integration", () => {
 		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
 
 		// runAllChecks was called with the staged file list
-		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000)
+		expect(runAllChecks).toHaveBeenCalledWith(
+			"/tmp/test-repo",
+			["src/foo.ts"],
+			60000,
+			expect.any(Object),
+		)
 		// showCheckFailureMenu was NOT shown (checks passed)
 		expect(showCheckFailureMenu).not.toHaveBeenCalled()
 		// Message generation still proceeded
@@ -465,7 +470,12 @@ describe("commitCommand check integration", () => {
 		await commitCommand({ retry: false, auto: false, agent: false }, "0.0.0-test")
 
 		// Deleted file should NOT be in the check list
-		expect(runAllChecks).toHaveBeenCalledWith("/tmp/test-repo", ["src/foo.ts"], 60000)
+		expect(runAllChecks).toHaveBeenCalledWith(
+			"/tmp/test-repo",
+			["src/foo.ts"],
+			60000,
+			expect.any(Object),
+		)
 	})
 
 	it("checks fail → parses stderr into concise summaries → recovery menu shown → user skips → message generation proceeds", async () => {
