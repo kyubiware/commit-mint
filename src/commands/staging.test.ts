@@ -8,7 +8,6 @@ const {
 	mockGetRepoRoot,
 	mockDetectConfig,
 	mockRunAllChecks,
-	mockStopCheckSpinner,
 	mockStageFiles,
 } = vi.hoisted(() => ({
 	mockGetChangedFiles: vi.fn(),
@@ -16,7 +15,6 @@ const {
 	mockGetRepoRoot: vi.fn(),
 	mockDetectConfig: vi.fn(),
 	mockRunAllChecks: vi.fn(),
-	mockStopCheckSpinner: vi.fn(),
 	mockStageFiles: vi.fn(),
 }))
 
@@ -31,10 +29,6 @@ vi.mock("../services/git.js", () => ({
 vi.mock("../services/checks.js", () => ({
 	detectConfig: mockDetectConfig,
 	runAllChecks: mockRunAllChecks,
-}))
-
-vi.mock("../ui/check-summary.js", () => ({
-	stopCheckSpinner: mockStopCheckSpinner,
 }))
 
 vi.mock("../ui/check-failure-menu.js", () => ({
@@ -58,6 +52,7 @@ vi.mock("@clack/prompts", () => ({
 vi.mock("kolorist", () => ({
 	dim: (s: string) => s,
 	red: (s: string) => s,
+	green: (s: string) => s,
 }))
 
 vi.mock("../utils/debug.js", () => ({
@@ -74,7 +69,6 @@ beforeEach(() => {
 	mockDetectConfig.mockResolvedValue("/fake/repo/.cmintrc.ts")
 	mockGetStagedFiles.mockResolvedValue([])
 	mockRunAllChecks.mockResolvedValue({ ok: true, results: [] })
-	mockStopCheckSpinner.mockReturnValue(undefined)
 	mockStageFiles.mockResolvedValue(undefined)
 	mockGetChangedFiles.mockResolvedValue([])
 })

@@ -8,7 +8,7 @@ import {
 	stageAll,
 	stageFiles,
 } from "../services/git.js"
-import { stopCheckSpinner } from "../ui/check-summary.js"
+import { createCheckProgressDisplay } from "../ui/check-progress.js"
 import { showStagingMenu } from "../ui/staging-menu.js"
 import { debug } from "../utils/debug.js"
 import { type CommitFlags, runAutoGroupFlow } from "./auto-group.js"
@@ -55,11 +55,10 @@ export async function handleStaging(
 			const allFiles = await getStagedFiles()
 			const configPath = await detectConfig(repoRoot)
 			if (configPath) {
-				const ckSpinner = spinner()
-				ckSpinner.start("Running checks...")
-				const ckResult = await runAllChecks(repoRoot, allFiles, 60000)
-				stopCheckSpinner(ckSpinner, ckResult)
-				if (!ckResult.ok) {
+				const display = createCheckProgressDisplay()
+				const ckResult = await runAllChecks(repoRoot, allFiles, 60000, display)
+				const { failed } = display.finish()
+				if (failed > 0) {
 					for (const r of ckResult.results.filter((r) => !r.ok))
 						log.info(r.stderr?.trim() || r.stdout?.trim() || `Check failed: ${r.command}`)
 				}
