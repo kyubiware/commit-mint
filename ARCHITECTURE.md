@@ -13,7 +13,7 @@
 - Interactive staging menu shown for **every** commit (select files, auto-group, run checks from cmint config, stage all, commit staged) — also the only entry point to the auto-accept `a` hotkey and skip-checks `c` hotkey toggles. "Select files..." is hidden when there is only one file
 - Auto-accept mode toggled via `a` hotkey in the staging menu; when ON, skips the message review step. Skip-checks mode toggled via `c` hotkey; when ON, bypasses user-defined pre-commit checks. Both persisted to `~/.commit-mint` as `auto-accept` and `skip-checks` keys
 - User-defined pre-commit checks via cmint config files (14 naming patterns, glob matching via picomatch, function commands)
-- Shared interactive check-execution pipeline (`runCheckPhaseInteractive`) used by both `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging), encapsulating: `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`
+- Shared interactive check-execution pipeline (`runCheckPhaseInteractive`) used by both `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging), encapsulating: `detectConfig` guard → live progress display → `runAllChecks` → retry loop with `showCheckFailureMenu`
 - Recursive recovery menu with 6 options (copy, view full output, skip hooks, restage, edit message, cancel)
 - Check failure menu with 5 options (copy, view full output, retry checks, skip checks, cancel) — includes tsc inline diagnostics (up to 3), ESLint stylish format parsing, and vitest/jest test failure grouping
 - AI-powered auto-grouping of changed files into logical commits, with low-quality grouping detection and retry
@@ -171,7 +171,7 @@
 - Pattern: `() => Promise<void>`
 
 **runCheckPhaseInteractive:**
-- Purpose: Single entry point for the interactive check-execution pipeline shared by `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging). Encapsulates: `detectConfig` guard → spinner → `runAllChecks` → retry loop with `showCheckFailureMenu`. Caller is responsible for deriving repo-root-relative file paths and deciding how to handle `"cancelled"` (`process.exit(1)` vs propagating up).
+- Purpose: Single entry point for the interactive check-execution pipeline shared by `runPreCommitChecks` (post-staging) and `runAutoGroupFlow` (pre-staging). Encapsulates: `detectConfig` guard → live progress display → `runAllChecks` → retry loop with `showCheckFailureMenu`. Caller is responsible for deriving repo-root-relative file paths and deciding how to handle `"cancelled"` (`process.exit(1)` vs propagating up).
 - Location: `src/commands/check-phase.ts:44`
 - Pattern: Async function `(repoRoot, files, timeout, onRetry?) => Promise<CheckPhaseOutcome>`
 

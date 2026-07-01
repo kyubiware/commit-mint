@@ -27,7 +27,7 @@ src/commands/
 | Add CLI flag routing | `commit.ts` | `commitCommand()` dispatches by flag |
 | Change retry behavior | `retry.ts` | `handleRetry()` loads cache, delegates to recovery |
 | Change staging menu | `staging.ts` | `handleStaging()` loop, `runPreCommitChecks()` |
-| Change check pipeline | `check-phase.ts` | `runCheckPhaseInteractive()` — single entry point for detectConfig → spinner → runAllChecks → retry loop with failure menu |
+| Change check pipeline | `check-phase.ts` | `runCheckPhaseInteractive()` — single entry point for detectConfig → live progress display → runAllChecks → retry loop with failure menu |
 | Change auto-group flow | `auto-group.ts` | `runAutoGroupFlow()` sequential per-group commits |
 | Change recovery cycle | `commit-utils.ts` | `commitWithRecovery()` attempt → HEAD check → menu |
 | Change config TUI | `config.ts` | `configCommand()` interactive INI read/write |
@@ -54,4 +54,4 @@ src/commands/
 - Auto-group commits sequentially, NOT in parallel (git locking)
 - Hook failure during auto-group STOPS sequence (doesn't skip remaining groups)
 - Excluded files committed BEFORE auto-group with hardcoded messages
-- NEVER call `runAllChecks` directly from a command — use `runCheckPhaseInteractive` so the detectConfig guard, spinner, and failure-menu loop are applied consistently. Direct calls bypass the shared pipeline and re-introduce the path-frame / spinner bugs that the extraction eliminated.
+- NEVER call `runAllChecks` directly from a command — use `runCheckPhaseInteractive` so the detectConfig guard, progress display, and failure-menu loop are applied consistently. Direct calls bypass the shared pipeline and re-introduce the path-frame / display bugs that the extraction eliminated.

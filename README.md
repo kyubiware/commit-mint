@@ -274,7 +274,7 @@ returns either.
 | Form | Behavior |
 |---|---|
 | `string` | Matched files are appended as trailing arguments. Paths with spaces are quoted automatically. |
-| `string[]` | Commands run sequentially, each as a separate command. First failure stops the run. |
+| `string[]` | Commands run sequentially, each as a separate command. All commands run regardless of failures. |
 | `(files) => string \| string[]` | Function receives the matched files. Use when the command depends on the file list. |
 
 **String command:**
@@ -313,8 +313,8 @@ export default {
 
 - Checks run after `git add`, before the AI call.
 - Globs are processed in declaration order.
-- Commands run sequentially per glob. First failure stops the run (fail-fast)
-  and skips remaining globs.
+- Commands run sequentially per glob. All commands and all globs always run;
+  failures are collected and returned together.
 - 60s timeout per command. ENOENT (command not found) and timeouts are
   reported back to the menu as their own error.
 - Skipped entirely with `cmint -N` or the `c` hotkey toggle.
