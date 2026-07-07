@@ -53,6 +53,12 @@ function buildMultiSelectRender<T>(
 				return `${header}\n${dim(S_BAR_END)}  ${cancelled}`
 			}
 			default: {
+				const stdio = output ?? process.stdout
+				const termRows = ("rows" in stdio ? (stdio as { rows?: number }).rows : undefined) ?? 24
+				// Reserve ~3 lines for header + hint footer + some padding.
+				// limitOptions also clamps via its own rowPadding, so this just
+				// removes the artificial 7-item ceiling.
+				const dynamicMax = Math.min(options.length, Math.max(5, termRows - 3))
 				const visible = limitOptions({
 					cursor,
 					options,
@@ -62,7 +68,7 @@ function buildMultiSelectRender<T>(
 							value.includes((opt as { value: T }).value),
 							active,
 						),
-					maxItems: 7,
+					maxItems: dynamicMax,
 					output: output ?? process.stdout,
 				})
 				const lines = visible.map((line: string) => `${dim(S_BAR)}  ${line}`)

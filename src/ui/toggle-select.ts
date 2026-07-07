@@ -156,11 +156,17 @@ function buildPromptRenderer<T>(
 				return `${header}\n${dim(S_BAR)}  ${styleText(["strikethrough", "dim"], text)}\n${dim(S_BAR_END)}`
 			}
 			default: {
+				const stdio = opts.output ?? process.stdout
+				const termRows = ("rows" in stdio ? (stdio as { rows?: number }).rows : undefined) ?? 24
+				// Reserve ~5 lines for header + 2 toggle status lines + hint
+				// footer + padding. limitOptions also clamps via its own
+				// rowPadding, so this just removes the artificial ceiling.
+				const dynamicMax = Math.min(optionList.length, Math.max(5, termRows - 5))
 				const visible = limitOptions({
 					cursor: this.cursor,
 					options: optionList,
 					style: (opt: ToggleSelectOption<T>, active: boolean) => renderOption(opt, active),
-					maxItems: 7,
+					maxItems: dynamicMax,
 					output: opts.output ?? process.stdout,
 				})
 				const lines = visible.map((line: string) => `${dim(S_BAR)}  ${line}`)
