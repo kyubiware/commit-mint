@@ -27,8 +27,13 @@ cli(
 				default: false,
 			},
 			auto: {
-				type: Boolean,
-				description: "Auto-group files into commits and accept messages (no prompts)",
+				type: (raw: string) => {
+					if (raw === "") return true
+					const n = Number(raw)
+					return Number.isNaN(n) ? true : n
+				},
+				description:
+					"Auto-group files into commits. Use -a <N> to request N groups (0 = LLM decides)",
 				alias: "a",
 				default: false,
 			},

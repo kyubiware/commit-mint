@@ -71,7 +71,7 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 			debug("Single-commit mode: staging all files")
 			await stageAll()
 			// Fall through to post-staging (checks → diff → generate → commit)
-		} else if (flags.auto) {
+		} else if (flags.auto !== false) {
 			if (flags.message) {
 				outro(red("--message flag is not compatible with auto-group mode."))
 				return

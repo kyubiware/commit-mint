@@ -219,9 +219,18 @@ export async function agentCommand(flags: CommitFlags): Promise<void> {
 	const timeout = config.timeout ? parseInt(config.timeout, 10) : undefined
 
 	// Step 8d: Generate groups via AI
+	const groupCount = typeof flags.auto === "number" ? flags.auto : 0
 	let groups: CommitGroup[]
 	try {
-		const result = await generateGroups(included, apiKey, model, timeout, provider, config.proxy)
+		const result = await generateGroups(
+			included,
+			apiKey,
+			model,
+			timeout,
+			provider,
+			config.proxy,
+			groupCount,
+		)
 		groups = validateGroups(result.groups, included)
 	} catch (err) {
 		process.exitCode = EXIT_CODES.AI

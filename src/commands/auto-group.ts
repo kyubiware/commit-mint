@@ -39,7 +39,7 @@ import { runCheckPhaseInteractive } from "./check-phase.js"
 
 export interface CommitFlags {
 	retry: boolean
-	auto: boolean
+	auto: boolean | number
 	agent: boolean
 	single?: boolean
 	message?: string
@@ -142,6 +142,7 @@ export async function runAutoGroupFlow(
 	}
 
 	// Step 4: Call grouping service
+	const groupCount = typeof flags.auto === "number" ? flags.auto : 0
 	const s = spinner()
 	s.start("Analyzing files...")
 	const apiKey = await getProviderApiKey(provider)
@@ -152,6 +153,7 @@ export async function runAutoGroupFlow(
 		config.timeout ? parseInt(config.timeout, 10) : undefined,
 		provider,
 		config.proxy,
+		groupCount,
 	)
 	const validatedGroups = validateGroups(result.groups, included)
 	s.stop("Files analyzed")
@@ -163,7 +165,7 @@ export async function runAutoGroupFlow(
 	// entire flow. `flags.auto` already skips both; auto-accept extends that
 	// to interactive (non-`--auto`) runs.
 	const autoAccept = await getAutoAccept()
-	const skipPrompts = flags.auto || autoAccept
+	const skipPrompts = flags.auto !== false || autoAccept
 
 	// Step 5: Show grouping confirmation (skip in auto mode or auto-accept)
 	if (skipPrompts) {
