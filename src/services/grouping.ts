@@ -98,8 +98,8 @@ export function buildFileSummary(files: ChangedFile[]): string {
 	return files.map((f) => `${f.path} (${statusIndicator(f.status)})`).join("\n")
 }
 
-export function buildGroupingSystemPrompt(): string {
-	return [
+export function buildGroupingSystemPrompt(groupCount?: number): string {
+	const lines = [
 		"You are analyzing changed files in a git repository. Group them into logical commits based on what changed and why. Each group should be a coherent unit of work.",
 		"",
 		"Rules:",
@@ -116,7 +116,13 @@ export function buildGroupingSystemPrompt(): string {
 		"files: array of exact file paths from the input",
 		"",
 		"Output ONLY valid JSON. No markdown fences, no explanation.",
-	].join("\n")
+	]
+
+	if (groupCount && groupCount > 0) {
+		lines.unshift(`Create exactly ${groupCount} groups.`)
+	}
+
+	return lines.join("\n")
 }
 
 function buildGroupingUserPrompt(summary: string): string {
@@ -148,6 +154,32 @@ export function buildRetryGroupingPrompt(): string {
 	].join("\n")
 }
 
+/**
+ * When a specific group count is requested but there are fewer included files
+ * than groups, create one-file-per-group groups without calling the AI.
+ * Returns null when the pre-condition is not met.
+ */
+function createPerFileGroups(
+	files: ChangedFile[],
+	groupCount: number | undefined,
+	excluded: string[],
+): GroupingResult | null {
+	if (!(groupCount && groupCount > 0 && files.length < groupCount)) return null
+	debug(
+		"generateGroups: %d files < %d requested groups, creating per-file groups",
+		files.length,
+		groupCount,
+	)
+	return {
+		groups: files.map((f) => ({
+			name: f.path.split("/").pop() || f.path,
+			description: `Changes to ${f.path}`,
+			files: [f.path],
+		})),
+		excluded,
+	}
+}
+
 export async function generateGroups(
 	files: ChangedFile[],
 	apiKey: string,
@@ -155,6 +187,7 @@ export async function generateGroups(
 	timeout?: number,
 	provider?: ProviderName,
 	proxy?: string,
+	groupCount?: number,
 ): Promise<GroupingResult> {
 	debug("generateGroups: %d files, model=%s", files.length, model ?? "default")
 
@@ -165,8 +198,11 @@ export async function generateGroups(
 		return { groups: [], excluded }
 	}
 
+	const perFile = createPerFileGroups(included, groupCount, excluded)
+	if (perFile) return perFile
+
 	const summary = buildFileSummary(included)
-	const systemPrompt = buildGroupingSystemPrompt()
+	const systemPrompt = buildGroupingSystemPrompt(groupCount)
 	const userPrompt = buildGroupingUserPrompt(summary)
 
 	debug("File summary:\n%s", summary)
