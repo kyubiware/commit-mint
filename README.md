@@ -72,6 +72,7 @@ cmint # interactive cli for committing changes
 ```bash
 cmint             # interactive: stage → checks → review → commit
 cmint -a          # auto-group, generate messages, commit everything
+cmint -a 3        # auto-group into exactly 3 commits
 cmint -s          # stage all tracked files in single commit, skip staging menu
 cmint config      # edit provider, model, locale, etc.
 cmint update      # update cmint to the latest published version
@@ -185,7 +186,7 @@ single raw-stderr entry.
 
 | Flag | Description |
 |---|---|
-| `-a`, `--auto` | Auto-stage tracked files and auto-group into commits |
+| `-a`, `--auto [N]` | Auto-group files into N commits (default: LLM decides). Use `-a 0` or `-a` for AI-determined groups |
 | `-m`, `--message <msg>` | Use your own message instead of AI generation |
 | `-H`, `--hint <hint>` | Context hint to the AI (e.g. `"refactor only"`) |
 | `-r`, `--retry` | Retry last failed commit (uses cached message) |
