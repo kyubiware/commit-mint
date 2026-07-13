@@ -204,4 +204,72 @@ describe("showStagingMenu toggle integration", () => {
 
 		expect(result).toBeNull()
 	})
+
+	describe("Select files initial values", () => {
+		beforeEach(() => {
+			vi.clearAllMocks()
+			vi.mocked(getAutoAccept).mockResolvedValue(false)
+			vi.mocked(getRunChecks).mockResolvedValue(true)
+		})
+
+		it("passes staged file paths as initialValues when some files are staged", async () => {
+			const mixedFiles: ChangedFile[] = [
+				{ path: "src/staged.ts", status: "M", staged: true },
+				{ path: "src/unstaged.ts", status: "M", staged: false },
+			]
+			vi.mocked(selectWithToggles).mockResolvedValue({
+				value: "select",
+				toggles: { autoAccept: false, runChecks: true },
+			})
+			vi.mocked(fileMultiSelect).mockResolvedValue(["src/staged.ts", "src/unstaged.ts"])
+
+			await showStagingMenu(mixedFiles, true)
+
+			expect(vi.mocked(fileMultiSelect)).toHaveBeenCalledWith(
+				"Select files to stage:",
+				expect.any(Array),
+				expect.objectContaining({ initialValues: ["src/staged.ts"] }),
+			)
+		})
+
+		it("passes empty initialValues when no files are staged", async () => {
+			const unstagedFiles: ChangedFile[] = [
+				{ path: "src/a.ts", status: "M", staged: false },
+				{ path: "src/b.ts", status: "M", staged: false },
+			]
+			vi.mocked(selectWithToggles).mockResolvedValue({
+				value: "select",
+				toggles: { autoAccept: false, runChecks: true },
+			})
+			vi.mocked(fileMultiSelect).mockResolvedValue(["src/a.ts", "src/b.ts"])
+
+			await showStagingMenu(unstagedFiles, true)
+
+			expect(vi.mocked(fileMultiSelect)).toHaveBeenCalledWith(
+				"Select files to stage:",
+				expect.any(Array),
+				expect.objectContaining({ initialValues: [] }),
+			)
+		})
+
+		it("passes all file paths as initialValues when all files are staged", async () => {
+			const allStaged: ChangedFile[] = [
+				{ path: "src/a.ts", status: "M", staged: true },
+				{ path: "src/b.ts", status: "M", staged: true },
+			]
+			vi.mocked(selectWithToggles).mockResolvedValue({
+				value: "select",
+				toggles: { autoAccept: false, runChecks: true },
+			})
+			vi.mocked(fileMultiSelect).mockResolvedValue(["src/a.ts", "src/b.ts"])
+
+			await showStagingMenu(allStaged, true)
+
+			expect(vi.mocked(fileMultiSelect)).toHaveBeenCalledWith(
+				"Select files to stage:",
+				expect.any(Array),
+				expect.objectContaining({ initialValues: ["src/a.ts", "src/b.ts"] }),
+			)
+		})
+	})
 })

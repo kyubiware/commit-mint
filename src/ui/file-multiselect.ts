@@ -96,6 +96,7 @@ export async function fileMultiSelect<T>(
 	options: Array<{ label: string; value: T }>,
 	opts?: {
 		required?: boolean
+		initialValues?: T[]
 		input?: Readable
 		output?: Writable
 	},
@@ -105,6 +106,7 @@ export async function fileMultiSelect<T>(
 	const prompt = new MultiSelectPrompt({
 		options,
 		required,
+		initialValues: opts?.initialValues,
 		input: opts?.input,
 		output: opts?.output,
 		validate: (values: T[] | undefined) => {

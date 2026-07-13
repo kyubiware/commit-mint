@@ -180,7 +180,10 @@ export async function showStagingMenu(
 			label: `${statusLabel(f.status)}  ${f.path}`,
 			value: f.path,
 		})),
-		{ required: true },
+		{
+			required: true,
+			initialValues: sorted.filter((f) => f.staged).map((f) => f.path),
+		},
 	)
 
 	if (p.isCancel(selected)) {
