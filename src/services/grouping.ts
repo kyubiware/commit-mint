@@ -129,8 +129,8 @@ function buildGroupingUserPrompt(summary: string): string {
 	return ["Group the following changed files into logical commits:", "", summary].join("\n")
 }
 
-export function buildRetryGroupingPrompt(): string {
-	return [
+export function buildRetryGroupingPrompt(groupCount?: number): string {
+	const lines = [
 		"PREVIOUS ATTEMPT FAILED: You grouped all files into a single group.",
 		"",
 		"You MUST split the files into at least 2 groups based on what changed and why.",
@@ -151,7 +151,14 @@ export function buildRetryGroupingPrompt(): string {
 		"files: array of exact file paths from the input",
 		"",
 		"Output ONLY valid JSON. No markdown fences, no explanation.",
-	].join("\n")
+	]
+
+	if (groupCount && groupCount > 0) {
+		lines[0] = "PREVIOUS ATTEMPT FAILED: You created the wrong number of groups."
+		lines[2] = `You MUST create exactly ${groupCount} groups. Do not create more or fewer.`
+	}
+
+	return lines.join("\n")
 }
 
 /**
@@ -227,9 +234,9 @@ export async function generateGroups(
 		// validateGroups() silently adds an "Other changes" group for any ungrouped
 		// files, which would mask an empty model response (turning [] into a single
 		// catch-all) and skip the retry the user needs.
-		if (isLowQualityGrouping(rawGroups, included)) {
+		if (isLowQualityGrouping(rawGroups, included, groupCount)) {
 			debug("generateGroups: low quality result, retrying with stricter prompt")
-			const retryPrompt = buildRetryGroupingPrompt()
+			const retryPrompt = buildRetryGroupingPrompt(groupCount)
 			rawGroups = await callGroupingAI(client, resolvedModel, retryPrompt, userPrompt)
 			debug("generateGroups retry: parsed %d raw groups", rawGroups.length)
 			validated = validateGroups(rawGroups, included)
@@ -281,12 +288,19 @@ async function callGroupingAI(
 /** Minimum file count where a single-group result is considered low quality */
 const MIN_FILES_FOR_QUALITY_CHECK = 5
 
-export function isLowQualityGrouping(groups: CommitGroup[], allFiles: ChangedFile[]): boolean {
+export function isLowQualityGrouping(
+	groups: CommitGroup[],
+	allFiles: ChangedFile[],
+	groupCount?: number,
+): boolean {
 	// No files to group → empty grouping is the correct result, not low quality.
 	if (allFiles.length === 0) return false
 	// Files were provided but the model returned no groups — retry once before
 	// falling back to "Other changes" so the user still gets a sensible commit.
 	if (groups.length === 0) return true
+	// When the user requested a specific number of groups and the model produced
+	// a different count, retry with a prompt that reinforces the target count.
+	if (groupCount && groupCount > 0 && groups.length !== groupCount) return true
 	if (allFiles.length < MIN_FILES_FOR_QUALITY_CHECK) return false
 	return groups.length === 1
 }

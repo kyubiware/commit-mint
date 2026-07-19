@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ChangedFile } from "./git.js"
 import {
 	buildGroupingSystemPrompt,
+	buildRetryGroupingPrompt,
 	filterExcludedFiles,
 	generateGroups,
 	isLowQualityGrouping,
@@ -499,6 +500,84 @@ describe("isLowQualityGrouping", () => {
 		]
 		expect(isLowQualityGrouping([], files)).toBe(true)
 	})
+
+	describe("isLowQualityGrouping with groupCount", () => {
+		it("flags when groups don't match requested count (too many)", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+			]
+			const groups = [
+				{ name: "G1", description: "d", files: ["src/a.ts"] },
+				{ name: "G2", description: "d", files: ["src/b.ts"] },
+			]
+			// Requested 1 group, got 2
+			expect(isLowQualityGrouping(groups, files, 1)).toBe(true)
+		})
+
+		it("flags when groups don't match requested count (too few)", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+				{ status: "M", path: "src/c.ts", staged: true },
+			]
+			const groups = [{ name: "G1", description: "d", files: ["src/a.ts", "src/b.ts", "src/c.ts"] }]
+			// Requested 3 groups, got 1
+			expect(isLowQualityGrouping(groups, files, 3)).toBe(true)
+		})
+
+		it("does not flag when groups match requested count", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+			]
+			const groups = [
+				{ name: "G1", description: "d", files: ["src/a.ts"] },
+				{ name: "G2", description: "d", files: ["src/b.ts"] },
+			]
+			expect(isLowQualityGrouping(groups, files, 2)).toBe(false)
+		})
+
+		it("does not flag when groupCount is 0 (LLM decides)", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+			]
+			const groups = [
+				{ name: "G1", description: "d", files: ["src/a.ts"] },
+				{ name: "G2", description: "d", files: ["src/b.ts"] },
+			]
+			expect(isLowQualityGrouping(groups, files, 0)).toBe(false)
+		})
+
+		it("does not flag when groupCount is undefined", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+			]
+			const groups = [
+				{ name: "G1", description: "d", files: ["src/a.ts"] },
+				{ name: "G2", description: "d", files: ["src/b.ts"] },
+			]
+			expect(isLowQualityGrouping(groups, files, undefined)).toBe(false)
+		})
+
+		it("takes priority over MIN_FILES_FOR_QUALITY_CHECK threshold", () => {
+			const files: ChangedFile[] = [
+				{ status: "M", path: "src/a.ts", staged: true },
+				{ status: "M", path: "src/b.ts", staged: true },
+				{ status: "M", path: "src/c.ts", staged: true },
+			]
+			const groups = [
+				{ name: "G1", description: "d", files: ["src/a.ts"] },
+				{ name: "G2", description: "d", files: ["src/b.ts"] },
+				{ name: "G3", description: "d", files: ["src/c.ts"] },
+			]
+			// 3 groups requested, got 3. 3 < MIN_FILES_FOR_QUALITY_CHECK (5) but
+			// groupCount match means we should not flag.
+			expect(isLowQualityGrouping(groups, files, 3)).toBe(false)
+		})
+	})
 })
 
 describe("buildGroupingSystemPrompt", () => {
@@ -528,6 +607,26 @@ describe("buildGroupingSystemPrompt", () => {
 		const docsRuleIdx = prompt.search(/Separate documentation/i)
 		expect(testRuleIdx).toBeGreaterThan(-1)
 		expect(docsRuleIdx).toBeGreaterThan(testRuleIdx)
+	})
+})
+
+describe("buildRetryGroupingPrompt", () => {
+	it("includes the specific count when groupCount is provided", () => {
+		const prompt = buildRetryGroupingPrompt(3)
+		expect(prompt).toContain("You MUST create exactly 3 groups.")
+		expect(prompt).toContain("Do not create more or fewer.")
+		expect(prompt).toContain("PREVIOUS ATTEMPT FAILED: You created the wrong number of groups.")
+	})
+
+	it("uses generic single-group instructions when no count provided", () => {
+		const prompt = buildRetryGroupingPrompt()
+		expect(prompt).toContain("You grouped all files into a single group")
+		expect(prompt).toContain("at least 2 groups")
+	})
+
+	it("uses generic instructions when groupCount is 0", () => {
+		const prompt = buildRetryGroupingPrompt(0)
+		expect(prompt).toContain("You grouped all files into a single group")
 	})
 })
 
