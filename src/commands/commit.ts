@@ -66,6 +66,11 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 	debug("Changed files:", changedFiles.length)
 	const s = spinner()
 
+	// True when everything was staged in one pass ("Stage all", --single).
+	// Subset staging choices ("Select files...", "Commit staged files only")
+	// set this to false, enabling the commit loop below.
+	let stagedAll = true
+
 	try {
 		if (flags.single) {
 			debug("Single-commit mode: staging all files")
@@ -88,6 +93,7 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 			const result = await handleStaging(changedFiles, flags)
 			if (!result) return
 			changedFiles = result.changedFiles
+			stagedAll = result.stagedAll
 		}
 	} catch (err) {
 		s.stop(red("Staging failed."))
@@ -97,143 +103,162 @@ export async function commitCommand(flags: CommitFlags, version: string) {
 		process.exit(1)
 	}
 
-	// Refresh file list after staging so staged state is accurate
-	changedFiles = await getChangedFiles()
+	// ── Commit loop ─────────────────────────────────────────────────
+	// After a successful subset commit ("Select files...", "Commit staged
+	// files only"), re-check for uncommitted files. If any remain, loop back
+	// to the staging menu so the user can keep committing the rest instead
+	// of the CLI exiting after the first commit.
+	while (true) {
+		// Refresh file list after staging so staged state is accurate
+		changedFiles = await getChangedFiles()
 
-	// Run user-defined pre-commit checks (before AI message generation).
-	// Checks run unless the per-invocation `--noCheck` flag is set OR the
-	// persisted `run-checks` preference is false (toggled via `c` hotkey in
-	// the staging menu).
-	const shouldRunChecks = !flags.noCheck && (await getRunChecks())
-	if (shouldRunChecks) {
-		await runPreCommitChecks(changedFiles, false)
-	}
+		// Run user-defined pre-commit checks (before AI message generation).
+		// Checks run unless the per-invocation `--noCheck` flag is set OR the
+		// persisted `run-checks` preference is false (toggled via `c` hotkey in
+		// the staging menu).
+		const shouldRunChecks = !flags.noCheck && (await getRunChecks())
+		if (shouldRunChecks) {
+			await runPreCommitChecks(changedFiles, false)
+		}
 
-	// Get diff for AI
-	const diffResult = await getStagedDiff()
-	if (!diffResult) {
-		debug("No staged changes found after staging")
-		outro(red("No staged changes found."))
-		process.exit(1)
-	}
+		// Get diff for AI
+		const diffResult = await getStagedDiff()
+		if (!diffResult) {
+			debug("No staged changes found after staging")
+			outro(red("No staged changes found."))
+			process.exit(1)
+		}
 
-	// Handle all-staged-files-are-excluded case with hardcoded message
-	if ("excludedFiles" in diffResult) {
-		debug("All staged files are excluded:", diffResult.excludedFiles)
-		const message = buildExcludedFilesMessage(diffResult.excludedFiles)
+		let commitResult: "committed" | "cancelled"
 
-		log.info(diffResult.excludedFiles.map((f) => `     ${f}`).join("\n"))
+		// Handle all-staged-files-are-excluded case with hardcoded message
+		if ("excludedFiles" in diffResult) {
+			debug("All staged files are excluded:", diffResult.excludedFiles)
+			const message = buildExcludedFilesMessage(diffResult.excludedFiles)
 
-		await saveCachedCommit(repoRoot, message)
+			log.info(diffResult.excludedFiles.map((f) => `     ${f}`).join("\n"))
 
-		s.start("Running pre-commit hooks...")
-		const headBefore = await getHead()
-		const result = await commitWithRecovery(message, s, headBefore)
-		if (result === "committed") {
+			await saveCachedCommit(repoRoot, message)
+
+			s.start("Running pre-commit hooks...")
+			const headBefore = await getHead()
+			commitResult = await commitWithRecovery(message, s, headBefore)
+		} else {
+			debug("Staged files:", diffResult.files)
+			debug("Diff length:", diffResult.diff.length, "chars")
+
+			log.info(diffResult.files.map((f) => `     ${f}`).join("\n"))
+
+			// Generate or use provided message
+			let message: string
+
+			if (flags.message) {
+				debug("Using provided message:", flags.message)
+				message = flags.message
+			} else {
+				const config = await readConfig()
+				const provider: ProviderName = isValidProvider(config.provider ?? "groq")
+					? (config.provider as ProviderName)
+					: "groq"
+				try {
+					await getProviderApiKey(provider)
+					debug("API key found")
+				} catch {
+					debug("No API key found, prompting user")
+					const { text: promptText } = await import("@clack/prompts")
+					const configKey = PROVIDER_ENV_KEYS[provider]
+					const key = await promptText({
+						message: `Enter your ${formatProviderName(provider)} API key:`,
+						placeholder: provider === "groq" ? "gsk_..." : "...",
+						validate: (v) => (v?.trim() ? undefined : "API key is required"),
+					})
+					if (isCancel(key)) {
+						outro(dim("Cancelled."))
+						return
+					}
+					await setConfigValue(configKey, String(key).trim())
+					debug("API key saved to config")
+				}
+
+				s.start("Generating commit message...")
+				try {
+					const genStart = Date.now()
+					message = await generateMessage(diffResult.diff, flags.hint)
+					debug("generateMessage took %d ms", Date.now() - genStart)
+					debug("Generated message:", message)
+				} catch (err) {
+					s.stop(red("Failed to generate message."))
+					debug("Message generation failed:", err instanceof Error ? err.message : String(err))
+					outro(red(err instanceof Error ? err.message : String(err)))
+					return
+				}
+				s.stop("Message generated")
+			}
+
+			// Review message (with optional code review) — skipped when auto-accept is ON
+			const autoAccept = flags.single || (await getAutoAccept())
+			if (autoAccept) {
+				debug("Auto-accept ON: skipping review step")
+				log.info(message)
+			} else {
+				const reviewed = await reviewCommitMessage(message, {
+					regenerate: async (hint) => {
+						const combinedHint = flags.hint ? `${flags.hint}\n${hint}` : hint
+						debug("Regenerating with combined hint:", combinedHint)
+						s.start("Regenerating commit message...")
+						try {
+							const newMessage = await generateMessage(diffResult.diff, combinedHint)
+							s.stop("Message regenerated")
+							return newMessage
+						} catch (err) {
+							s.stop(red("Regeneration failed"))
+							throw err
+						}
+					},
+				})
+				if (reviewed === null) {
+					outro(dim("Cancelled."))
+					return
+				}
+				message = reviewed
+			}
+
+			// Cache message before attempting commit
+			await saveCachedCommit(repoRoot, message)
+			debug("Message cached for repo:", repoRoot)
+
+			// Attempt commit
+			s.start("Running pre-commit hooks...")
+			const headBefore = await getHead()
+			debug("HEAD before commit:", headBefore)
+			commitResult = await commitWithRecovery(message, s, headBefore)
+			debug("Commit result:", commitResult)
+		}
+
+		if (commitResult === "cancelled") {
+			process.exit(1)
+		}
+
+		// "Stage all" (and --single) commits everything in one pass — nothing left.
+		if (stagedAll) {
 			outro(green("Done."))
 			return
 		}
-		if (result === "cancelled") {
-			process.exit(1)
-		}
-		return
-	}
 
-	debug("Staged files:", diffResult.files)
-	debug("Diff length:", diffResult.diff.length, "chars")
-
-	log.info(diffResult.files.map((f) => `     ${f}`).join("\n"))
-
-	// Generate or use provided message
-	let message: string
-
-	if (flags.message) {
-		debug("Using provided message:", flags.message)
-		message = flags.message
-	} else {
-		const config = await readConfig()
-		const provider: ProviderName = isValidProvider(config.provider ?? "groq")
-			? (config.provider as ProviderName)
-			: "groq"
-		try {
-			await getProviderApiKey(provider)
-			debug("API key found")
-		} catch {
-			debug("No API key found, prompting user")
-			const { text: promptText } = await import("@clack/prompts")
-			const configKey = PROVIDER_ENV_KEYS[provider]
-			const key = await promptText({
-				message: `Enter your ${formatProviderName(provider)} API key:`,
-				placeholder: provider === "groq" ? "gsk_..." : "...",
-				validate: (v) => (v?.trim() ? undefined : "API key is required"),
-			})
-			if (isCancel(key)) {
-				outro(dim("Cancelled."))
-				return
-			}
-			await setConfigValue(configKey, String(key).trim())
-			debug("API key saved to config")
-		}
-
-		s.start("Generating commit message...")
-		try {
-			const genStart = Date.now()
-			message = await generateMessage(diffResult.diff, flags.hint)
-			debug("generateMessage took %d ms", Date.now() - genStart)
-			debug("Generated message:", message)
-		} catch (err) {
-			s.stop(red("Failed to generate message."))
-			debug("Message generation failed:", err instanceof Error ? err.message : String(err))
-			outro(red(err instanceof Error ? err.message : String(err)))
+		// Subset commit — loop back to the staging menu while files remain.
+		const remaining = await getChangedFiles()
+		if (remaining.length === 0) {
+			outro(green("Done."))
 			return
 		}
-		s.stop("Message generated")
-	}
 
-	// Review message (with optional code review) — skipped when auto-accept is ON
-	const autoAccept = flags.single || (await getAutoAccept())
-	if (autoAccept) {
-		debug("Auto-accept ON: skipping review step")
-		log.info(message)
-	} else {
-		const reviewed = await reviewCommitMessage(message, {
-			regenerate: async (hint) => {
-				const combinedHint = flags.hint ? `${flags.hint}\n${hint}` : hint
-				debug("Regenerating with combined hint:", combinedHint)
-				s.start("Regenerating commit message...")
-				try {
-					const newMessage = await generateMessage(diffResult.diff, combinedHint)
-					s.stop("Message regenerated")
-					return newMessage
-				} catch (err) {
-					s.stop(red("Regeneration failed"))
-					throw err
-				}
-			},
-		})
-		if (reviewed === null) {
-			outro(dim("Cancelled."))
-			return
-		}
-		message = reviewed
-	}
-
-	// Cache message before attempting commit
-	await saveCachedCommit(repoRoot, message)
-	debug("Message cached for repo:", repoRoot)
-
-	// Attempt commit
-	s.start("Running pre-commit hooks...")
-	const headBefore = await getHead()
-	debug("HEAD before commit:", headBefore)
-	const result = await commitWithRecovery(message, s, headBefore)
-	debug("Commit result:", result)
-
-	if (result === "committed") {
-		outro(green("Done."))
-		return
-	}
-	if (result === "cancelled") {
-		process.exit(1)
+		debug("Uncommitted files remain after commit:", remaining.length)
+		log.info(
+			`${remaining.length} file${remaining.length !== 1 ? "s" : ""} remaining — continuing with the staging menu`,
+		)
+		const stagingResult = await handleStaging(remaining, flags)
+		if (!stagingResult) return
+		changedFiles = stagingResult.changedFiles
+		stagedAll = stagingResult.stagedAll
 	}
 }

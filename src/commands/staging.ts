@@ -23,6 +23,8 @@ export async function handleStaging(
 ): Promise<{
 	changedFiles: Awaited<ReturnType<typeof getChangedFiles>>
 	skipStaging: boolean
+	/** True when the user chose "Stage all" (vs a subset via "Select files..." / "Commit staged files only") */
+	stagedAll: boolean
 } | null> {
 	const repoRoot = await getRepoRoot()
 	const checksAvailable = (await detectConfig(repoRoot)) !== null
@@ -93,7 +95,7 @@ export async function handleStaging(
 		s.stop("Files staged")
 	}
 
-	return { changedFiles: currentFiles, skipStaging }
+	return { changedFiles: currentFiles, skipStaging, stagedAll: stageAllFlag }
 }
 
 /** Run user-defined pre-commit checks from cmint config */
