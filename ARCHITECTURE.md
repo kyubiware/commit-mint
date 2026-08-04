@@ -95,8 +95,9 @@
 14. Cache commit message — `src/utils/cache.ts:saveCachedCommit`
 15. Attempt `git commit -m` with real-time hook progress display — `src/commands/commit-utils.ts:commitWithRecovery` → `src/services/git.ts:attemptCommit`
 16. On success: print tool check summary from parsed hook stderr — `src/services/hooks.ts:parseToolChecks`
-17. On failure: parse hook errors — `src/services/hooks.ts:parseHookErrors`
-18. Show recovery menu — `src/ui/recovery-menu.ts:showRecoveryMenu`
+17. Loop check: if the staging choice was a subset ("Select files..." / "Commit staged files only" — `stagedAll` false from `handleStaging`) and `getChangedFiles()` still returns uncommitted files, re-show the staging menu (step 7) and repeat steps 8-16 — `src/commands/commit.ts` commit loop. "Stage all" and `--single` stage everything in one pass, so they exit with "Done." after the first commit
+18. On failure: parse hook errors — `src/services/hooks.ts:parseHookErrors`
+19. Show recovery menu — `src/ui/recovery-menu.ts:showRecoveryMenu`
 
 **Recovery Menu Flow:**
 
@@ -325,7 +326,7 @@
 **handleStaging:**
 - Location: `src/commands/staging.ts:20`
 - Triggers: Changed files in normal mode
-- Responsibilities: Interactive staging loop — auto-group, run checks, stage all, commit staged, select files; calls `showStagingMenu` which uses `selectWithToggles` from `toggle-select.ts` for auto-accept (`a`) and skip-checks (`c`) hotkey toggles; returns selected files or delegates to auto-group flow
+- Responsibilities: Interactive staging loop — auto-group, run checks, stage all, commit staged, select files; calls `showStagingMenu` which uses `selectWithToggles` from `toggle-select.ts` for auto-accept (`a`) and skip-checks (`c`) hotkey toggles; returns selected files (with `stagedAll` flag indicating whether the user chose "Stage all" vs a subset — drives the commit loop) or delegates to auto-group flow
 
 **showCheckFailureMenu:**
 - Location: `src/ui/check-failure-menu.ts:235`
