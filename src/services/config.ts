@@ -16,11 +16,13 @@ export interface Config {
 	GROQ_API_KEY?: string
 	CEREBRAS_API_KEY?: string
 	MISTRAL_API_KEY?: string
+	OMNIROUTE_API_KEY?: string
 	provider?: string
 	model?: string
 	model_groq?: string
 	model_cerebras?: string
 	model_mistral?: string
+	model_omniroute?: string
 	locale?: string
 	"max-length"?: string
 	type?: string
@@ -107,6 +109,11 @@ export async function getProviderApiKey(provider: string): Promise<string> {
 	}
 
 	debug("getProviderApiKey(%s): not found", provider)
+	const providerConfig = PROVIDER_CONFIGS[provider as ProviderName]
+	if (providerConfig?.requiresApiKey === false) {
+		debug("getProviderApiKey(%s): optional key not set, continuing without auth", provider)
+		return ""
+	}
 	throw new Error(
 		`Please set your ${formatProviderName(provider)} API key via \`cmint config set ${envVar}=<your token>\``,
 	)

@@ -28,10 +28,12 @@ function buildConfigDisplay(config: Record<string, string | undefined>): string 
 		provider,
 		PROVIDER_CONFIGS[provider].defaultModel,
 	)
+	const keyLabel =
+		apiKey ?? (PROVIDER_CONFIGS[provider].requiresApiKey === false ? dim("(optional)") : undefined)
 
 	const lines = [
 		`Provider:     ${bold(formatProviderName(provider))}`,
-		`API Key:      ${maskKey(apiKey)}`,
+		`API Key:      ${maskKey(keyLabel)}`,
 		`Model:        ${effectiveModel}`,
 		`Locale:       ${config.locale ?? "en"}`,
 		`Max Length:   ${config["max-length"] ?? "100"}`,
@@ -54,20 +56,29 @@ async function promptProvider(): Promise<string | symbol> {
 			{ label: "Groq", value: "groq", hint: PROVIDER_CONFIGS.groq.defaultModel },
 			{ label: "Cerebras", value: "cerebras", hint: PROVIDER_CONFIGS.cerebras.defaultModel },
 			{ label: "Mistral", value: "mistral", hint: PROVIDER_CONFIGS.mistral.defaultModel },
+			{
+				label: "OmniRoute",
+				value: "omniroute",
+				hint: `local gateway · ${PROVIDER_CONFIGS.omniroute.defaultModel}`,
+			},
 		],
 	})
 }
 
 async function promptApiKey(provider: ProviderName): Promise<string | symbol> {
 	const keyName = PROVIDER_ENV_KEYS[provider]
+	const requiresKey = PROVIDER_CONFIGS[provider].requiresApiKey !== false
 	const result = await p.text({
-		message: `${formatProviderName(provider)} API key:`,
-		placeholder: "Paste your API key",
-		validate: (v) => (!v?.trim() ? "API key cannot be empty" : undefined),
+		message: `${formatProviderName(provider)} API key${requiresKey ? "" : " (optional)"}:`,
+		placeholder: requiresKey ? "Paste your API key" : "Leave empty for none",
+		validate: (v) => (!v?.trim() && requiresKey ? "API key cannot be empty" : undefined),
 	})
 	if (p.isCancel(result)) return result
-	await writeConfig({ [keyName]: result.toString().trim() })
-	debug("config: %s set", keyName)
+	const trimmed = result.toString().trim()
+	if (trimmed) {
+		await writeConfig({ [keyName]: trimmed })
+		debug("config: %s set", keyName)
+	}
 	return result
 }
 
@@ -109,10 +120,11 @@ function getSettingHandlers(
 			await writeConfig({ provider: newProvider, model: newDefaultModel })
 			debug("config: provider set to %s, model set to %s", newProvider, newDefaultModel)
 
-			// Prompt for API key if not set for the new provider
+			// Prompt for API key if not set for the new provider (skipped for
+			// keyless providers like omniroute that work without auth)
 			const keyName = PROVIDER_ENV_KEYS[newProvider]
 			const updatedConfig = (await readConfig()) as Record<string, string | undefined>
-			if (!updatedConfig[keyName]) {
+			if (!updatedConfig[keyName] && PROVIDER_CONFIGS[newProvider].requiresApiKey !== false) {
 				const keyResult = await promptApiKey(newProvider)
 				if (p.isCancel(keyResult)) return keyResult
 			}

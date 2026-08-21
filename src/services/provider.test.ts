@@ -1,5 +1,5 @@
 import type Groq from "groq-sdk"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
 	ALLOWED_PROVIDERS,
 	createProvider,
@@ -15,6 +15,7 @@ describe("isValidProvider", () => {
 		expect(isValidProvider("groq")).toBe(true)
 		expect(isValidProvider("cerebras")).toBe(true)
 		expect(isValidProvider("mistral")).toBe(true)
+		expect(isValidProvider("omniroute")).toBe(true)
 	})
 	it("returns false for invalid providers", () => {
 		expect(isValidProvider("openai")).toBe(false)
@@ -112,5 +113,60 @@ describe("createProvider with proxy override", () => {
 	it("uses provider default baseURL when no override given", () => {
 		const result = createProvider({ provider: "groq", apiKey: "test" })
 		expect((result.client as Groq).baseURL).toBe(PROVIDER_CONFIGS.groq.baseURL)
+	})
+})
+
+describe("omniroute provider", () => {
+	it("defaults to the auto combo model on localhost:20128", () => {
+		expect(PROVIDER_CONFIGS.omniroute.baseURL).toBe("http://localhost:20128/v1")
+		expect(PROVIDER_CONFIGS.omniroute.defaultModel).toBe("auto")
+	})
+
+	it("does not require an API key (keyless local gateway)", () => {
+		expect(PROVIDER_CONFIGS.omniroute.requiresApiKey).toBe(false)
+	})
+
+	it("requires API keys for all other providers (explicit or by default)", () => {
+		for (const provider of ALLOWED_PROVIDERS) {
+			if (provider === "omniroute") continue
+			expect(PROVIDER_CONFIGS[provider].requiresApiKey ?? true).toBe(true)
+		}
+	})
+
+	it("routes through the fetch client, not the Groq SDK", () => {
+		const result = createProvider({ provider: "omniroute", apiKey: "" })
+		// Groq SDK instances expose a baseURL property; the plain fetch client does not
+		expect((result.client as Groq).baseURL).toBeUndefined()
+	})
+})
+
+describe("fetch client Authorization header", () => {
+	const OK_RESPONSE = () =>
+		new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 })
+
+	afterEach(() => {
+		vi.unstubAllGlobals()
+	})
+
+	async function callOnce(apiKey: string): Promise<Record<string, unknown>[]> {
+		const fetchMock = vi.fn().mockResolvedValue(OK_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		const { client, model } = createProvider({ provider: "omniroute", apiKey })
+		await client.chat.completions.create({
+			model,
+			messages: [{ role: "user", content: "hi" }],
+		})
+		return fetchMock.mock.calls[0] as unknown as Record<string, unknown>[]
+	}
+
+	it("posts to <baseURL>/chat/completions with Bearer auth when a key is set", async () => {
+		const [url, init] = (await callOnce("tok-123")) as [string, { headers: Record<string, string> }]
+		expect(url).toBe("http://localhost:20128/v1/chat/completions")
+		expect(init.headers.Authorization).toBe("Bearer tok-123")
+	})
+
+	it("omits the Authorization header entirely when apiKey is empty (keyless)", async () => {
+		const [, init] = (await callOnce("")) as [string, { headers: Record<string, string> }]
+		expect("Authorization" in init.headers).toBe(false)
 	})
 })

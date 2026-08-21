@@ -1,11 +1,16 @@
 import Groq from "groq-sdk"
 import { debug } from "../utils/debug.js"
 
-export type ProviderName = "groq" | "cerebras" | "mistral"
+export type ProviderName = "groq" | "cerebras" | "mistral" | "omniroute"
 
 export interface ProviderConfig {
 	baseURL: string
 	defaultModel: string
+	/**
+	 * When false, the provider works without an API key (e.g. local gateways).
+	 * Defaults to true — only keyless providers set this explicitly.
+	 */
+	requiresApiKey?: boolean
 }
 
 export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
@@ -21,6 +26,11 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		baseURL: "https://api.mistral.ai/v1",
 		defaultModel: "mistral-small",
 	},
+	omniroute: {
+		baseURL: "http://localhost:20128/v1",
+		defaultModel: "auto",
+		requiresApiKey: false,
+	},
 }
 
 export const ALLOWED_PROVIDERS = Object.keys(PROVIDER_CONFIGS) as ProviderName[]
@@ -30,6 +40,7 @@ export const PROVIDER_ENV_KEYS: Record<ProviderName, string> = {
 	groq: "GROQ_API_KEY",
 	cerebras: "CEREBRAS_API_KEY",
 	mistral: "MISTRAL_API_KEY",
+	omniroute: "OMNIROUTE_API_KEY",
 }
 
 export function formatProviderName(provider: string): string {
@@ -70,7 +81,10 @@ function createFetchClient(baseURL: string, apiKey: string, timeout: number) {
 							method: "POST",
 							headers: {
 								"Content-Type": "application/json",
-								Authorization: `Bearer ${apiKey}`,
+								// Keyless providers (requiresApiKey: false) may have no key —
+								// omit the header entirely instead of sending a malformed
+								// `Authorization: Bearer ` value.
+								...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
 							},
 							body: JSON.stringify(params),
 							signal: controller.signal,
