@@ -86,7 +86,9 @@ function createFetchClient(baseURL: string, apiKey: string, timeout: number) {
 								// `Authorization: Bearer ` value.
 								...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
 							},
-							body: JSON.stringify(params),
+							// Some gateways (e.g. OmniRoute) default to streaming SSE when
+							// the `stream` field is absent — request JSON explicitly.
+							body: JSON.stringify({ ...params, stream: false }),
 							signal: controller.signal,
 						})
 
@@ -95,15 +97,25 @@ function createFetchClient(baseURL: string, apiKey: string, timeout: number) {
 							throw new Error(`${response.status} ${text}`)
 						}
 
-						return (await response.json()) as {
+						const data = (await response.json()) as {
 							choices: Array<{
 								message?: {
 									content?: string | Array<{ type: string; text?: string }>
 									reasoning?: string
+									reasoning_content?: string
 								}
 								finish_reason?: string
 							}>
 						}
+						// Reasoning models behind gateways may use the DeepSeek-style
+						// `reasoning_content` field instead of OpenAI-style `reasoning` —
+						// normalize so downstream fallbacks see both under one name.
+						for (const choice of data.choices ?? []) {
+							if (!choice.message?.reasoning && choice.message?.reasoning_content) {
+								choice.message.reasoning = choice.message.reasoning_content
+							}
+						}
+						return data
 					} finally {
 						clearTimeout(timer)
 					}

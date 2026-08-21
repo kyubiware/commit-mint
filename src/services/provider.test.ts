@@ -169,4 +169,39 @@ describe("fetch client Authorization header", () => {
 		const [, init] = (await callOnce("")) as [string, { headers: Record<string, string> }]
 		expect("Authorization" in init.headers).toBe(false)
 	})
+
+	it("requests a non-streaming response (stream: false)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(OK_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		const { client, model } = createProvider({ provider: "omniroute", apiKey: "" })
+		await client.chat.completions.create({
+			model,
+			messages: [{ role: "user", content: "hi" }],
+		})
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }]
+		expect(JSON.parse(init.body).stream).toBe(false)
+	})
+
+	it("normalizes reasoning_content to reasoning (gateway reasoning models)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							finish_reason: "stop",
+							message: { role: "assistant", content: "", reasoning_content: "chore: update deps" },
+						},
+					],
+				}),
+				{ status: 200 },
+			),
+		)
+		vi.stubGlobal("fetch", fetchMock)
+		const { client, model } = createProvider({ provider: "omniroute", apiKey: "" })
+		const completion = await client.chat.completions.create({
+			model,
+			messages: [{ role: "user", content: "hi" }],
+		})
+		expect(completion.choices[0]?.message?.reasoning).toBe("chore: update deps")
+	})
 })
