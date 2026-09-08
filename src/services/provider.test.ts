@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
 	ALLOWED_PROVIDERS,
 	createProvider,
+	fetchProviderModels,
 	formatProviderName,
+	isFreeModelId,
 	isValidProvider,
 	PROVIDER_CONFIGS,
 	PROVIDER_ENV_KEYS,
@@ -59,6 +61,12 @@ describe("formatProviderName", () => {
 	})
 	it("handles already capitalized input", () => {
 		expect(formatProviderName("Groq")).toBe("Groq")
+	})
+	it("uses the registry displayName override when present", () => {
+		expect(formatProviderName("commandcode")).toBe("Command Code")
+	})
+	it("falls back to capitalized id for unknown providers", () => {
+		expect(formatProviderName("openai")).toBe("Openai")
 	})
 })
 
@@ -119,7 +127,7 @@ describe("createProvider with proxy override", () => {
 describe("omniroute provider", () => {
 	it("defaults to the auto combo model on localhost:20128", () => {
 		expect(PROVIDER_CONFIGS.omniroute.baseURL).toBe("http://localhost:20128/v1")
-		expect(PROVIDER_CONFIGS.omniroute.defaultModel).toBe("auto")
+		expect(PROVIDER_CONFIGS.omniroute.defaultModel).toBe("auto/fast")
 	})
 
 	it("does not require an API key (keyless local gateway)", () => {
@@ -135,6 +143,32 @@ describe("omniroute provider", () => {
 
 	it("routes through the fetch client, not the Groq SDK", () => {
 		const result = createProvider({ provider: "omniroute", apiKey: "" })
+		// Groq SDK instances expose a baseURL property; the plain fetch client does not
+		expect((result.client as Groq).baseURL).toBeUndefined()
+	})
+})
+
+describe("commandcode provider", () => {
+	it("uses the CommandCode gateway URL with the deepseek flash default model", () => {
+		expect(PROVIDER_CONFIGS.commandcode.baseURL).toBe("https://api.commandcode.ai/provider/v1")
+		expect(PROVIDER_CONFIGS.commandcode.defaultModel).toBe("deepseek/deepseek-v4-flash")
+	})
+
+	it("exposes a live model list for selection", () => {
+		expect(PROVIDER_CONFIGS.commandcode.supportsModelList).toBe(true)
+	})
+
+	it("is a valid provider mapped to the COMMANDCODE_API_KEY env var", () => {
+		expect(isValidProvider("commandcode")).toBe(true)
+		expect(PROVIDER_ENV_KEYS.commandcode).toBe("COMMANDCODE_API_KEY")
+	})
+
+	it("requires an API key (explicit or by default)", () => {
+		expect(PROVIDER_CONFIGS.commandcode.requiresApiKey ?? true).toBe(true)
+	})
+
+	it("routes through the fetch client, not the Groq SDK", () => {
+		const result = createProvider({ provider: "commandcode", apiKey: "" })
 		// Groq SDK instances expose a baseURL property; the plain fetch client does not
 		expect((result.client as Groq).baseURL).toBeUndefined()
 	})
@@ -203,5 +237,117 @@ describe("fetch client Authorization header", () => {
 			messages: [{ role: "user", content: "hi" }],
 		})
 		expect(completion.choices[0]?.message?.reasoning).toBe("chore: update deps")
+	})
+
+	it("converts raw AbortError into a clear timeout error", async () => {
+		const fetchMock = vi.fn().mockImplementation(
+			(_url: unknown, init: { signal: AbortSignal }) =>
+				new Promise((_resolve, reject) => {
+					init.signal.addEventListener("abort", () => {
+						reject(new DOMException("This operation was aborted", "AbortError"))
+					})
+				}),
+		)
+		vi.stubGlobal("fetch", fetchMock)
+		const { client } = createProvider({ provider: "omniroute", apiKey: "", timeout: 50 })
+		await expect(
+			client.chat.completions.create({
+				model: "auto/fast",
+				messages: [{ role: "user", content: "hi" }],
+			}),
+		).rejects.toThrow("Request timed out after 50ms")
+	})
+})
+
+describe("fetchProviderModels", () => {
+	const MODELS_RESPONSE = () =>
+		new Response(
+			JSON.stringify({
+				object: "list",
+				data: [
+					{
+						id: "claude-sonnet-5",
+						object: "model",
+						name: "Claude Sonnet 5",
+						context_length: 1000000,
+					},
+					{ id: "deepseek/deepseek-v4-flash" },
+					{ id: 42, name: 7, context_length: "1M" },
+					{ name: "no id" },
+				],
+			}),
+			{ status: 200 },
+		)
+
+	afterEach(() => {
+		vi.unstubAllGlobals()
+	})
+
+	it("parses data[] into ProviderModelInfo entries, skipping entries without an id", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(MODELS_RESPONSE()))
+		const models = await fetchProviderModels("commandcode")
+		expect(models).toEqual([
+			{ id: "claude-sonnet-5", name: "Claude Sonnet 5", contextLength: 1000000 },
+			{ id: "deepseek/deepseek-v4-flash", name: undefined, contextLength: undefined },
+			{ id: "42", name: undefined, contextLength: undefined },
+		])
+	})
+
+	it("hits the provider's /models endpoint exactly", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		await fetchProviderModels("commandcode")
+		const [url] = fetchMock.mock.calls[0] as unknown as [string]
+		expect(url).toBe("https://api.commandcode.ai/provider/v1/models")
+	})
+
+	it("sends Bearer auth when a key is provided", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		await fetchProviderModels("commandcode", "tok-123")
+		const [, init] = fetchMock.mock.calls[0] as unknown as [
+			string,
+			{ headers: Record<string, string> },
+		]
+		expect(init.headers.Authorization).toBe("Bearer tok-123")
+	})
+
+	it("omits the Authorization header entirely when apiKey is empty (keyless)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		await fetchProviderModels("commandcode", "")
+		const [, init] = fetchMock.mock.calls[0] as unknown as [
+			string,
+			{ headers: Record<string, string> },
+		]
+		expect("Authorization" in init.headers).toBe(false)
+	})
+
+	it("rejects with the HTTP status on non-2xx responses", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 })))
+		await expect(fetchProviderModels("commandcode", "bad-key")).rejects.toThrow(
+			"Failed to fetch models from commandcode (HTTP 401)",
+		)
+	})
+
+	it("rejects on a malformed body without a data array", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [] }), { status: 200 })),
+		)
+		await expect(fetchProviderModels("commandcode")).rejects.toThrow(
+			"Invalid model list response from commandcode",
+		)
+	})
+})
+describe("isFreeModelId", () => {
+	it("matches the provider's free-model id suffixes", () => {
+		expect(isFreeModelId("poolside/laguna-s-2.1-free")).toBe(true)
+		expect(isFreeModelId("meituan/LongCat-2.0:free")).toBe(true)
+	})
+	it("is case-insensitive and end-anchored", () => {
+		expect(isFreeModelId("vendor/Model-FREE")).toBe(true)
+		expect(isFreeModelId("freebird/large")).toBe(false)
+		expect(isFreeModelId("groq/openai/gpt-oss-20b")).toBe(false)
 	})
 })
