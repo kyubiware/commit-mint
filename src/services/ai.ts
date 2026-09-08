@@ -24,6 +24,13 @@ export function mapGroqError(error: unknown, providerLabel?: string): Error {
 	if (error instanceof Error && /^4\d{2}\s/.test(error.message)) {
 		return new Error(`${label} API error: ${error.message}`)
 	}
+	// Handle timeouts from the generic fetch client's AbortController — raw
+	// AbortError surfaces as "This operation was aborted" with no timeout hint
+	if (error instanceof Error && (error.name === "AbortError" || /timed out/i.test(error.message))) {
+		return new Error(
+			`Request to ${label} timed out. Check your network, try a smaller diff, or increase 'timeout' in ~/.commit-mint.`,
+		)
+	}
 	return new Error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`)
 }
 

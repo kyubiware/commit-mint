@@ -397,6 +397,14 @@ describe("generateCommitMessage", () => {
 		)
 	})
 
+	it("throws friendly timeout message on raw fetch-client AbortError", async () => {
+		mockCreate.mockRejectedValue(new DOMException("This operation was aborted", "AbortError"))
+
+		await expect(
+			generateCommitMessage("some diff", { apiKey: "test_key", provider: "omniroute" }),
+		).rejects.toThrow("Request to Omniroute timed out")
+	})
+
 	it("throws API error message on generic APIError", async () => {
 		const { default: Groq } = await import("groq-sdk")
 		mockCreate.mockRejectedValue(new Groq.APIError(500, {}, "Server Error", {}))
