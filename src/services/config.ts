@@ -23,6 +23,7 @@ export interface Config {
 	model_cerebras?: string
 	model_mistral?: string
 	model_omniroute?: string
+	model_commandcode?: string
 	locale?: string
 	"max-length"?: string
 	type?: string

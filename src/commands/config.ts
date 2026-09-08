@@ -1,11 +1,19 @@
 import * as p from "@clack/prompts"
 import { bold, dim, green } from "kolorist"
-import { getModelForProvider, readConfig, writeConfig } from "../services/config.js"
 import {
+	getModelForProvider,
+	getProviderApiKey,
+	readConfig,
+	writeConfig,
+} from "../services/config.js"
+import {
+	fetchProviderModels,
 	formatProviderName,
+	isFreeModelId,
 	isValidProvider,
 	PROVIDER_CONFIGS,
 	PROVIDER_ENV_KEYS,
+	type ProviderModelInfo,
 	type ProviderName,
 } from "../services/provider.js"
 import { debug } from "../utils/debug.js"
@@ -57,6 +65,11 @@ async function promptProvider(): Promise<string | symbol> {
 			{ label: "Cerebras", value: "cerebras", hint: PROVIDER_CONFIGS.cerebras.defaultModel },
 			{ label: "Mistral", value: "mistral", hint: PROVIDER_CONFIGS.mistral.defaultModel },
 			{
+				label: "Command Code",
+				value: "commandcode",
+				hint: PROVIDER_CONFIGS.commandcode.defaultModel,
+			},
+			{
 				label: "OmniRoute",
 				value: "omniroute",
 				hint: `local gateway · ${PROVIDER_CONFIGS.omniroute.defaultModel}`,
@@ -105,6 +118,74 @@ const requireNumber = (v: string | undefined) => {
 	return Number.isNaN(Number(v)) ? "Must be a number" : undefined
 }
 
+interface ModelSelectOption {
+	label: string
+	value: string
+	hint: string | undefined
+}
+
+/**
+ * Build select options for the live model list: free models first (provider
+ * id convention: `-free` / `:free` suffix), then the rest in the server's
+ * curated order. Excludes claude-* ids — CommandCode FAQ: those are served in
+ * Anthropic format on /v1/messages and return HTTP 400 unsupported_model/
+ * wrong-endpoint on /chat/completions, the only endpoint cmint calls.
+ */
+export function buildModelOptions(models: ProviderModelInfo[]): ModelSelectOption[] {
+	const usable = models.filter((m) => !m.id.startsWith("claude"))
+	return [
+		...usable.filter((m) => isFreeModelId(m.id)),
+		...usable.filter((m) => !isFreeModelId(m.id)),
+	].map((m) => {
+		const label = m.name ?? m.id
+		return {
+			// clack renders the hint only on the cursor row, so the free marker
+			// lives in the label to stay visible on every row.
+			label: isFreeModelId(m.id) ? `${label} (free)` : label,
+			value: m.id,
+			hint: m.contextLength ? `${Math.round(m.contextLength / 1000)}k ctx` : undefined,
+		}
+	})
+}
+async function pickModelFromList(
+	provider: ProviderName,
+	currentModel: string | undefined,
+): Promise<string | symbol | undefined> {
+	let apiKey: string
+	try {
+		apiKey = await getProviderApiKey(provider)
+	} catch {
+		// API key not set yet — fall through to the manual text prompt.
+		return undefined
+	}
+
+	let models: ProviderModelInfo[]
+	try {
+		models = await fetchProviderModels(provider, apiKey)
+	} catch {
+		p.log.warn("Could not fetch model list — enter the model ID manually")
+		return undefined
+	}
+
+	const options = buildModelOptions(models)
+	if (options.length === 0) {
+		p.log.warn("Could not fetch model list — enter the model ID manually")
+		return undefined
+	}
+
+	const initial = options.find((o) => o.value === currentModel)
+	const selected = await p.select({
+		message: "Select model:",
+		options,
+		...(initial ? { initialValue: initial.value } : {}),
+		maxItems: 12,
+	})
+	if (p.isCancel(selected)) return selected
+	await writeConfig({ model: selected })
+	debug("config: model set to %s", selected)
+	return selected
+}
+
 type SettingHandler = () => Promise<string | symbol | undefined>
 
 function getSettingHandlers(
@@ -136,6 +217,10 @@ function getSettingHandlers(
 				provider,
 				PROVIDER_CONFIGS[provider].defaultModel,
 			)
+			if (PROVIDER_CONFIGS[provider].supportsModelList) {
+				const picked = await pickModelFromList(provider, effectiveModel)
+				if (picked !== undefined) return picked
+			}
 			return promptTextSetting("Model ID:", "model", effectiveModel)
 		},
 		locale: async () => promptTextSetting("Locale (e.g. en, ja, ko):", "locale", config.locale),

@@ -17,6 +17,7 @@ const ALL_PROVIDER_ENV_KEYS = [
 	"CEREBRAS_API_KEY",
 	"MISTRAL_API_KEY",
 	"OMNIROUTE_API_KEY",
+	"COMMANDCODE_API_KEY",
 ] as const
 
 function missingConfigFile() {
@@ -51,5 +52,31 @@ describe("getProviderApiKey keyless providers", () => {
 		process.env.OMNIROUTE_API_KEY = ""
 		vi.mocked(readFile).mockResolvedValue("OMNIROUTE_API_KEY=ini-token\n")
 		await expect(getProviderApiKey("omniroute")).resolves.toBe("ini-token")
+	})
+})
+
+describe("getProviderApiKey commandcode", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		for (const key of ALL_PROVIDER_ENV_KEYS) {
+			delete process.env[key]
+		}
+	})
+
+	it("prefers COMMANDCODE_API_KEY env var over the INI value", async () => {
+		process.env.COMMANDCODE_API_KEY = "env-token"
+		vi.mocked(readFile).mockResolvedValue("COMMANDCODE_API_KEY=ini-token\n")
+		await expect(getProviderApiKey("commandcode")).resolves.toBe("env-token")
+	})
+
+	it("falls back to the INI value", async () => {
+		process.env.COMMANDCODE_API_KEY = ""
+		vi.mocked(readFile).mockResolvedValue("COMMANDCODE_API_KEY=ini-token\n")
+		await expect(getProviderApiKey("commandcode")).resolves.toBe("ini-token")
+	})
+
+	it("throws when no key is set anywhere (commandcode requires a key, unlike omniroute)", async () => {
+		vi.mocked(readFile).mockRejectedValue(missingConfigFile())
+		await expect(getProviderApiKey("commandcode")).rejects.toThrow(/COMMANDCODE_API_KEY/)
 	})
 })
