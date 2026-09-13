@@ -1,7 +1,14 @@
 import Groq from "groq-sdk"
 import { debug } from "../utils/debug.js"
 
-export type ProviderName = "groq" | "cerebras" | "mistral" | "commandcode" | "omniroute"
+export type ProviderName =
+	| "groq"
+	| "cerebras"
+	| "mistral"
+	| "commandcode"
+	| "omniroute"
+	| "openrouter"
+	| "gemini"
 
 export interface ProviderConfig {
 	baseURL: string
@@ -15,6 +22,13 @@ export interface ProviderConfig {
 	 * When true, the provider exposes GET {baseURL}/models for live model selection.
 	 */
 	supportsModelList?: boolean
+	/**
+	 * Ids matching this RegExp are hidden from the live model picker (requires
+	 * supportsModelList). Providers list models the /chat/completions endpoint
+	 * can't serve — non-chat entries (embeddings, TTS, image) or models only
+	 * served on a different API format.
+	 */
+	modelListExclude?: RegExp
 	/**
 	 * Human-readable name shown in prompts and menus. Falls back to the
 	 * capitalized provider id when unset.
@@ -40,11 +54,33 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		defaultModel: "deepseek/deepseek-v4-flash",
 		supportsModelList: true,
 		displayName: "Command Code",
+		// claude-* ids are Anthropic-format on /v1/messages; /chat/completions
+		// returns HTTP 400 for them.
+		modelListExclude: /^claude/,
 	},
 	omniroute: {
 		baseURL: "http://localhost:20128/v1",
 		defaultModel: "auto/fast",
 		requiresApiKey: false,
+	},
+	openrouter: {
+		baseURL: "https://openrouter.ai/api/v1",
+		// Stable virtual router pooling all currently active free models —
+		// individual `:free` ids rotate off; the router slug does not.
+		defaultModel: "openrouter/free",
+		supportsModelList: true,
+		displayName: "OpenRouter",
+	},
+	gemini: {
+		// No trailing slash — createFetchClient() string-concatenates
+		// `${baseURL}/chat/completions`.
+		baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+		defaultModel: "gemini-3.8-flash",
+		supportsModelList: true,
+		displayName: "Gemini",
+		// The list also contains embeddings, TTS, image, video (veo/imagen)
+		// models that /chat/completions can't serve.
+		modelListExclude: /embedding|image|tts|veo|imagen|nano-banana|audio/i,
 	},
 }
 
@@ -57,6 +93,8 @@ export const PROVIDER_ENV_KEYS: Record<ProviderName, string> = {
 	mistral: "MISTRAL_API_KEY",
 	commandcode: "COMMANDCODE_API_KEY",
 	omniroute: "OMNIROUTE_API_KEY",
+	openrouter: "OPENROUTER_API_KEY",
+	gemini: "GEMINI_API_KEY",
 }
 
 export function formatProviderName(provider: string): string {
@@ -236,8 +274,9 @@ export async function fetchProviderModels(
  * Free models are flagged in the id by the provider's own convention — a
  * `-free` / `:free` suffix (e.g. `poolside/laguna-s-2.1-free`,
  * `meituan/LongCat-2.0:free`), matching the models CommandCode's pricing docs
- * list as free.
+ * list as free. OpenRouter's `openrouter/free` router id counts as free by
+ * exact match.
  */
 export function isFreeModelId(id: string): boolean {
-	return /[:-]free$/i.test(id)
+	return id === "openrouter/free" || /[:-]free$/i.test(id)
 }

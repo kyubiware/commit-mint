@@ -18,6 +18,8 @@ describe("isValidProvider", () => {
 		expect(isValidProvider("cerebras")).toBe(true)
 		expect(isValidProvider("mistral")).toBe(true)
 		expect(isValidProvider("omniroute")).toBe(true)
+		expect(isValidProvider("openrouter")).toBe(true)
+		expect(isValidProvider("gemini")).toBe(true)
 	})
 	it("returns false for invalid providers", () => {
 		expect(isValidProvider("openai")).toBe(false)
@@ -174,6 +176,69 @@ describe("commandcode provider", () => {
 	})
 })
 
+describe("openrouter provider", () => {
+	it("uses the OpenRouter API URL with the stable free router as default", () => {
+		expect(PROVIDER_CONFIGS.openrouter.baseURL).toBe("https://openrouter.ai/api/v1")
+		expect(PROVIDER_CONFIGS.openrouter.defaultModel).toBe("openrouter/free")
+	})
+
+	it("exposes a live model list for selection", () => {
+		expect(PROVIDER_CONFIGS.openrouter.supportsModelList).toBe(true)
+	})
+
+	it("is a valid provider mapped to the OPENROUTER_API_KEY env var", () => {
+		expect(isValidProvider("openrouter")).toBe(true)
+		expect(PROVIDER_ENV_KEYS.openrouter).toBe("OPENROUTER_API_KEY")
+	})
+
+	it("requires an API key (explicit or by default)", () => {
+		expect(PROVIDER_CONFIGS.openrouter.requiresApiKey ?? true).toBe(true)
+	})
+
+	it("routes through the fetch client, not the Groq SDK", () => {
+		const result = createProvider({ provider: "openrouter", apiKey: "" })
+		// Groq SDK instances expose a baseURL property; the plain fetch client does not
+		expect((result.client as Groq).baseURL).toBeUndefined()
+	})
+})
+
+describe("gemini provider", () => {
+	it("uses the Gemini OpenAI-compat URL with the flash default model", () => {
+		// No trailing slash — the fetch client string-concatenates /chat/completions.
+		expect(PROVIDER_CONFIGS.gemini.baseURL).toBe(
+			"https://generativelanguage.googleapis.com/v1beta/openai",
+		)
+		expect(PROVIDER_CONFIGS.gemini.defaultModel).toBe("gemini-3.8-flash")
+	})
+
+	it("exposes a live model list for selection", () => {
+		expect(PROVIDER_CONFIGS.gemini.supportsModelList).toBe(true)
+	})
+
+	it("is a valid provider mapped to the GEMINI_API_KEY env var", () => {
+		expect(isValidProvider("gemini")).toBe(true)
+		expect(PROVIDER_ENV_KEYS.gemini).toBe("GEMINI_API_KEY")
+	})
+
+	it("requires an API key (explicit or by default)", () => {
+		expect(PROVIDER_CONFIGS.gemini.requiresApiKey ?? true).toBe(true)
+	})
+
+	it("routes through the fetch client, not the Groq SDK", () => {
+		const result = createProvider({ provider: "gemini", apiKey: "" })
+		// Groq SDK instances expose a baseURL property; the plain fetch client does not
+		expect((result.client as Groq).baseURL).toBeUndefined()
+	})
+
+	it("hides non-chat models while keeping chat models selectable", () => {
+		const exclude = PROVIDER_CONFIGS.gemini.modelListExclude
+		expect(exclude?.test("gemini-embedding-001")).toBe(true)
+		expect(exclude?.test("gemini-2.5-flash-preview-tts")).toBe(true)
+		expect(exclude?.test("veo-3.0-generate-001")).toBe(true)
+		expect(exclude?.test("gemini-3.8-flash")).toBe(false)
+	})
+})
+
 describe("fetch client Authorization header", () => {
 	const OK_RESPONSE = () =>
 		new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 })
@@ -301,6 +366,22 @@ describe("fetchProviderModels", () => {
 		expect(url).toBe("https://api.commandcode.ai/provider/v1/models")
 	})
 
+	it("hits openrouter's /models endpoint exactly", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		await fetchProviderModels("openrouter")
+		const [url] = fetchMock.mock.calls[0] as unknown as [string]
+		expect(url).toBe("https://openrouter.ai/api/v1/models")
+	})
+
+	it("hits gemini's OpenAI-compat /models endpoint exactly", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
+		vi.stubGlobal("fetch", fetchMock)
+		await fetchProviderModels("gemini")
+		const [url] = fetchMock.mock.calls[0] as unknown as [string]
+		expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/models")
+	})
+
 	it("sends Bearer auth when a key is provided", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(MODELS_RESPONSE())
 		vi.stubGlobal("fetch", fetchMock)
@@ -349,5 +430,10 @@ describe("isFreeModelId", () => {
 		expect(isFreeModelId("vendor/Model-FREE")).toBe(true)
 		expect(isFreeModelId("freebird/large")).toBe(false)
 		expect(isFreeModelId("groq/openai/gpt-oss-20b")).toBe(false)
+	})
+	it("treats OpenRouter's free router id as free", () => {
+		expect(isFreeModelId("openrouter/free")).toBe(true)
+		expect(isFreeModelId("openrouter/auto")).toBe(false)
+		expect(isFreeModelId("openrouter/free/extra")).toBe(false)
 	})
 })
