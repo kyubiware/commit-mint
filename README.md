@@ -201,13 +201,15 @@ Stored in `~/.commit-mint` (INI format). Run `cmint config` to edit.
 
 | Key | Default | Description |
 |---|---|---|
-| `provider` | `groq` | `groq`, `cerebras`, `mistral`, `commandcode`, or `omniroute` |
+| `provider` | `groq` | `groq`, `cerebras`, `mistral`, `commandcode`, `omniroute`, `openrouter`, or `gemini` |
 | `model` | `openai/gpt-oss-20b` | Default model; overridable per provider |
 | `model_groq` | — | Override default when provider is `groq` |
 | `model_cerebras` | — | Override default when provider is `cerebras` |
 | `model_mistral` | — | Override default when provider is `mistral` |
 | `model_commandcode` | — | Override default when provider is `commandcode` |
 | `model_omniroute` | — | Override default when provider is `omniroute` |
+| `model_openrouter` | — | Override default when provider is `openrouter` |
+| `model_gemini` | — | Override default when provider is `gemini` |
 | `locale` | `en` | Locale for generated messages |
 | `max-length` | `100` | Max commit message length |
 | `type` | — | Force commit type prefix |
@@ -227,6 +229,8 @@ API key lookup checks the env var first, then the INI file.
 | `MISTRAL_API_KEY` | `cmint` (when `provider=mistral`) | Yes, unless set in `~/.commit-mint` |
 | `COMMANDCODE_API_KEY` | `cmint` (when `provider=commandcode`) | Yes, unless set in `~/.commit-mint` |
 | `OMNIROUTE_API_KEY` | `cmint` (when `provider=omniroute`) | Optional — local gateway, no key needed |
+| `OPENROUTER_API_KEY` | `cmint` (when `provider=openrouter`) | Yes, unless set in `~/.commit-mint` |
+| `GEMINI_API_KEY` | `cmint` (when `provider=gemini`) | Yes, unless set in `~/.commit-mint` |
 | `https_proxy` / `HTTPS_PROXY` | All providers | Optional — overrides `proxy` config key |
 | `NO_COLOR` | All UI | Optional — disables `kolorist` color output |
 
@@ -239,11 +243,17 @@ API key lookup checks the env var first, then the INI file.
 | `mistral` | `MISTRAL_API_KEY` | `mistral-small` | Built-in fetch |
 | `commandcode` | `COMMANDCODE_API_KEY` | `deepseek/deepseek-v4-flash` | Built-in fetch |
 | `omniroute` | `OMNIROUTE_API_KEY` | `auto/fast` | Built-in fetch (none — local gateway) |
+| `openrouter` | `OPENROUTER_API_KEY` | `openrouter/free` | Built-in fetch |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3.8-flash` | Built-in fetch |
 
-All five use OpenAI-compatible APIs and most have a generous free tier. Per-
+All seven use OpenAI-compatible APIs and most have a generous free tier. Per-
 provider model overrides: set `model_groq`, `model_cerebras`, `model_mistral`,
-`model_commandcode`, or `model_omniroute` in `~/.commit-mint`. Resolution
-order is `model_<provider>` → `model` → provider default.
+`model_commandcode`, `model_omniroute`, `model_openrouter`, or `model_gemini`
+in `~/.commit-mint`. Resolution order is `model_<provider>` → `model` →
+provider default. OpenRouter and Gemini expose live model lists in `cmint
+config` — ids tagged free (`:free`/`-free`, plus OpenRouter's `openrouter/free`
+router) sort first and are labeled `(free)`. Gemini ids carry no free marker,
+so its list keeps the provider's server order.
 
 ### Pre-flight Check Config
 

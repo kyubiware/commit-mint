@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-CLI tool (`cmint`) that wraps `git commit` with AI-generated messages (multi-provider: Groq, Cerebras, Mistral) and an interactive recovery menu for pre-commit hook failures. TypeScript/ESM, built with tsdown.
+CLI tool (`cmint`) that wraps `git commit` with AI-generated messages (multi-provider: Groq, Cerebras, Mistral, CommandCode, OmniRoute, OpenRouter, Gemini) and an interactive recovery menu for pre-commit hook failures. TypeScript/ESM, built with tsdown.
 
 ## STRUCTURE
 
@@ -73,7 +73,7 @@ src/
 | `reviewCommitMessage` | Function | `src/ui/review-message.ts` | Message review: use-as-is / edit / cancel |
 | `showGroupingConfirmation` | Function | `src/ui/grouping.ts` | Grouping confirmation with file list |
 | `Config` | Interface | `src/services/config.ts:15` | Config shape with per-provider model keys |
-| `ProviderName` | Type | `src/services/provider.ts:4` | `"groq" \| "cerebras" \| "mistral"` |
+| `ProviderName` | Type | `src/services/provider.ts:4` | `"groq" \| "cerebras" \| "mistral" \| "commandcode" \| "omniroute" \| "openrouter" \| "gemini"` |
 
 ## CONVENTIONS
 
@@ -116,7 +116,7 @@ npm run test:watch      # vitest --watch
 
 ## NOTES
 
-- Multi-provider AI: Groq SDK for groq provider, generic fetch client for cerebras/mistral. `createProvider()` in `src/services/provider.ts` routes automatically.
+- Multi-provider AI: Groq SDK for groq provider, generic fetch client for all others (cerebras, mistral, commandcode, omniroute, openrouter, gemini). `createProvider()` in `src/services/provider.ts` routes automatically.
 - Diff compression is 4-tier (not 3): Tier 0 full (≤20K chars) → Tier 1 strip context → Tier 2 cap hunks (10 changed lines) → Tier 3 file summary
 - Commit flow includes message review step (use-as-is / edit / cancel) before attempting commit
 - `--hint/-H` flag passes user context to AI prompt alongside diff

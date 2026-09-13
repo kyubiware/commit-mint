@@ -9,7 +9,7 @@
 - Separate headless `agentCommand` for AI coding agents (non-interactive, JSON output, 7 documented exit codes)
 - Plugin-style error parsers for 5 hook tools (lint-staged, biome, tsc, vitest/jest, eslint) with raw fallback — plus a separate `parseCheckErrors` for cmint check output format (`[tool]` prefix blocks)
 - 4-tier diff compression for AI prompt efficiency (full → strip context → cap hunks → file summary)
-- Provider abstraction supporting Groq, Cerebras, and Mistral via OpenAI-compatible API
+- Provider abstraction supporting Groq, Cerebras, Mistral, CommandCode, OmniRoute, OpenRouter, and Gemini via OpenAI-compatible API
 - Interactive staging menu shown for **every** commit (select files, auto-group, run checks from cmint config, stage all, commit staged) — also the only entry point to the auto-accept `a` hotkey and skip-checks `c` hotkey toggles. "Select files..." is hidden when there is only one file
 - Auto-accept mode toggled via `a` hotkey in the staging menu; when ON, skips the message review step. Skip-checks mode toggled via `c` hotkey; when ON, bypasses user-defined pre-commit checks. Both persisted to `~/.commit-mint` as `auto-accept` and `skip-checks` keys
 - User-defined pre-commit checks via cmint config files (14 naming patterns, glob matching via picomatch, function commands)
@@ -20,7 +20,7 @@
 - Deterministic test/source reunification that moves misplaced test files back into the group containing their source counterpart (co-located, `__tests__/` mirror, and `tests/`/`test/` mirror layouts)
 - Robust JSON array recovery for AI grouping responses (single-object fallback, markdown fence stripping, think tag removal)
 - Real-time hook progress display during pre-commit hook execution
-- Provider-aware model resolution: `model_groq`, `model_cerebras`, `model_mistral` override the global `model` key per provider
+- Provider-aware model resolution: per-provider `model_<provider>` keys (e.g. `model_groq`, `model_openrouter`) override the global `model` key
 - Preflight `.cmintrc` setup prompt at the start of `cmint` (auto-detects biome/eslint/typescript/vitest, writes config file, supports `.cmint-skip-setup` marker for permanent opt-out)
 - Debug session logging to `~/.cache/commit-mint/debug.log` with session headers, viewable via `cmint logs`
 - Agent mode (`--agent`) for headless non-interactive auto-group with JSON output to stdout
@@ -47,7 +47,7 @@
 **Services Layer:**
 - Purpose: Encapsulate external system interactions and business logic
 - Location: `src/services/`
-- Contains: `git.ts` (git operations), `ai.ts` (multi-provider AI generation with 4-tier diff compression), `grouping.ts` (AI file grouping + low-quality detection + orphan validation), `grouping-parser.ts` (robust JSON array recovery for grouping responses), `grouping-reunite.ts` (deterministic test/source reunification), `provider.ts` (multi-provider abstraction: Groq, Cerebras, Mistral), `hooks.ts` (hook error parsing + `parseCheckErrors` for cmint check output + tool check summary), `hook-progress.ts` (real-time hook progress parser), `checks.ts` (user-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution, function commands), `config.ts` (INI config at `~/.commit-mint`), `clipboard.ts` (cross-platform clipboard — wl-copy --foreground, wl-copy fallback, xclip, xsel, pbcopy), `auto-accept.ts` (auto-accept preference persistence), `skip-checks.ts` (skip-checks preference persistence), `update-check.ts` (stale-while-revalidate background update notifier), `updater.ts` (npm registry version check + global install)
+- Contains: `git.ts` (git operations), `ai.ts` (multi-provider AI generation with 4-tier diff compression), `grouping.ts` (AI file grouping + low-quality detection + orphan validation), `grouping-parser.ts` (robust JSON array recovery for grouping responses), `grouping-reunite.ts` (deterministic test/source reunification), `provider.ts` (multi-provider abstraction: Groq, Cerebras, Mistral, CommandCode, OmniRoute, OpenRouter, Gemini), `hooks.ts` (hook error parsing + `parseCheckErrors` for cmint check output + tool check summary), `hook-progress.ts` (real-time hook progress parser), `checks.ts` (user-defined pre-commit checks via cmint config files — config detection, glob matching via picomatch, command execution, function commands), `config.ts` (INI config at `~/.commit-mint`), `clipboard.ts` (cross-platform clipboard — wl-copy --foreground, wl-copy fallback, xclip, xsel, pbcopy), `auto-accept.ts` (auto-accept preference persistence), `skip-checks.ts` (skip-checks preference persistence), `update-check.ts` (stale-while-revalidate background update notifier), `updater.ts` (npm registry version check + global install)
 - Depends on: `execa`, `groq-sdk`, `ini`, `picomatch`, `jiti`, `semver`, Node.js built-ins
 - Used by: Commands layer
 
@@ -214,12 +214,12 @@
 **Config:**
 - Purpose: User configuration for AI provider, per-provider model keys, locale, max-length, type, timeout, proxy, auto-accept, skip-checks
 - Location: `src/services/config.ts:15`
-- Pattern: Interface with optional string-keyed properties; provider-specific model keys (`model_groq`, `model_cerebras`, `model_mistral`); auto-accept key; skip-checks key
+- Pattern: Interface with optional string-keyed properties; provider-specific model keys (`model_groq` … `model_gemini`, one per provider); auto-accept key; skip-checks key
 
 **ProviderConfig / ProviderName:**
-- Purpose: Provider definitions for Groq, Cerebras, Mistral — base URL, default model, env key
+- Purpose: Provider definitions for Groq, Cerebras, Mistral, CommandCode, OmniRoute, OpenRouter, Gemini — base URL, default model, env key
 - Location: `src/services/provider.ts:4-11`
-- Pattern: `ProviderName` union type; `PROVIDER_CONFIGS` record mapping providers to `{ baseURL, defaultModel }`
+- Pattern: `ProviderName` union type; `PROVIDER_CONFIGS` record mapping providers to `{ baseURL, defaultModel }` plus optional flags (`requiresApiKey`, `supportsModelList`, `displayName`, `modelListExclude` — ids hidden from the live model picker)
 
 **KnownError:**
 - Purpose: Distinguishable error class for git-specific failures
@@ -369,4 +369,4 @@
 
 **Skip-checks:** `src/services/skip-checks.ts` — persists skip-checks preference to `~/.commit-mint` as `skip-checks` key. Toggled via `c` hotkey in the staging menu (`src/ui/toggle-select.ts`). When enabled, bypasses user-defined pre-commit checks in the staging flow.
 
-**Storage:** `src/services/config.ts` — INI-format config at `~/.commit-mint`. Defaults merged via spread. Keys: GROQ_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, provider, model, model_groq, model_cerebras, model_mistral, locale, max-length, type, timeout, proxy, auto-accept, skip-checks.
+**Storage:** `src/services/config.ts` — INI-format config at `~/.commit-mint`. Defaults merged via spread. Keys: GROQ_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, COMMANDCODE_API_KEY, OMNIROUTE_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, provider, model, model_<provider> (per provider), locale, max-length, type, timeout, proxy, auto-accept, skip-checks.
