@@ -24,6 +24,8 @@ export interface Config {
 	model_mistral?: string
 	model_omniroute?: string
 	model_commandcode?: string
+	model_openrouter?: string
+	model_gemini?: string
 	locale?: string
 	"max-length"?: string
 	type?: string

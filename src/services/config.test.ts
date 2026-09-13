@@ -18,6 +18,8 @@ const ALL_PROVIDER_ENV_KEYS = [
 	"MISTRAL_API_KEY",
 	"OMNIROUTE_API_KEY",
 	"COMMANDCODE_API_KEY",
+	"OPENROUTER_API_KEY",
+	"GEMINI_API_KEY",
 ] as const
 
 function missingConfigFile() {

@@ -70,6 +70,16 @@ async function promptProvider(): Promise<string | symbol> {
 				hint: PROVIDER_CONFIGS.commandcode.defaultModel,
 			},
 			{
+				label: "OpenRouter",
+				value: "openrouter",
+				hint: PROVIDER_CONFIGS.openrouter.defaultModel,
+			},
+			{
+				label: "Gemini",
+				value: "gemini",
+				hint: PROVIDER_CONFIGS.gemini.defaultModel,
+			},
+			{
 				label: "OmniRoute",
 				value: "omniroute",
 				hint: `local gateway · ${PROVIDER_CONFIGS.omniroute.defaultModel}`,
@@ -127,12 +137,15 @@ interface ModelSelectOption {
 /**
  * Build select options for the live model list: free models first (provider
  * id convention: `-free` / `:free` suffix), then the rest in the server's
- * curated order. Excludes claude-* ids — CommandCode FAQ: those are served in
- * Anthropic format on /v1/messages and return HTTP 400 unsupported_model/
- * wrong-endpoint on /chat/completions, the only endpoint cmint calls.
+ * curated order. `exclude` hides ids the provider's /chat/completions
+ * endpoint can't serve (registry `modelListExclude` — e.g. CommandCode's
+ * Anthropic-format claude-* models, Gemini's embeddings/TTS/image models).
  */
-export function buildModelOptions(models: ProviderModelInfo[]): ModelSelectOption[] {
-	const usable = models.filter((m) => !m.id.startsWith("claude"))
+export function buildModelOptions(
+	models: ProviderModelInfo[],
+	exclude?: RegExp,
+): ModelSelectOption[] {
+	const usable = exclude ? models.filter((m) => !exclude.test(m.id)) : models
 	return [
 		...usable.filter((m) => isFreeModelId(m.id)),
 		...usable.filter((m) => !isFreeModelId(m.id)),
@@ -167,7 +180,7 @@ async function pickModelFromList(
 		return undefined
 	}
 
-	const options = buildModelOptions(models)
+	const options = buildModelOptions(models, PROVIDER_CONFIGS[provider].modelListExclude)
 	if (options.length === 0) {
 		p.log.warn("Could not fetch model list — enter the model ID manually")
 		return undefined

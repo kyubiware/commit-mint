@@ -18,7 +18,7 @@ vi.mock("../services/config.js", () => ({
 vi.mock("../utils/debug.js", () => ({ debug: vi.fn() }))
 vi.mock("./setup.js", () => ({ setupCmintrcCommand: vi.fn() }))
 
-import type { ProviderModelInfo } from "../services/provider.js"
+import { PROVIDER_CONFIGS, type ProviderModelInfo } from "../services/provider.js"
 import { buildModelOptions } from "./config.js"
 
 const model = (id: string, name?: string, contextLength?: number): ProviderModelInfo => ({
@@ -62,11 +62,34 @@ describe("buildModelOptions", () => {
 		expect(options[0].hint).toBeUndefined()
 	})
 
-	it("excludes claude-* models (Anthropic-format only on /v1/messages)", () => {
-		const options = buildModelOptions([
-			model("claude-sonnet-5", "Claude Sonnet 5", 1000000),
-			model("paid/a", "Paid A", 100000),
-		])
+	it("hides ids matching the exclude regex and passes the rest through", () => {
+		const options = buildModelOptions(
+			[model("vendor/embed-1", "Embed 1"), model("paid/a", "Paid A", 100000)],
+			/embed/i,
+		)
 		expect(options.map((o) => o.value)).toEqual(["paid/a"])
+	})
+
+	it("applies the commandcode registry exclude to hide claude-* models", () => {
+		expect(PROVIDER_CONFIGS.commandcode.modelListExclude).toEqual(/^claude/)
+		const options = buildModelOptions(
+			[
+				model("claude-sonnet-5", "Claude Sonnet 5", 1000000),
+				model("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash"),
+			],
+			PROVIDER_CONFIGS.commandcode.modelListExclude,
+		)
+		expect(options.map((o) => o.value)).toEqual(["deepseek/deepseek-v4-flash"])
+	})
+
+	it("applies the gemini registry exclude to hide non-chat models", () => {
+		const options = buildModelOptions(
+			[
+				model("gemini-embedding-001", "Gemini Embedding 001"),
+				model("gemini-3.8-flash", "Gemini 3.8 Flash", 1000000),
+			],
+			PROVIDER_CONFIGS.gemini.modelListExclude,
+		)
+		expect(options.map((o) => o.value)).toEqual(["gemini-3.8-flash"])
 	})
 })
