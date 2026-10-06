@@ -75,7 +75,7 @@ export const PROVIDER_CONFIGS: Record<ProviderName, ProviderConfig> = {
 		// No trailing slash — createFetchClient() string-concatenates
 		// `${baseURL}/chat/completions`.
 		baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-		defaultModel: "gemini-3.8-flash",
+		defaultModel: "gemini-3.5-flash-lite",
 		supportsModelList: true,
 		displayName: "Gemini",
 		// The list also contains embeddings, TTS, image, video (veo/imagen)

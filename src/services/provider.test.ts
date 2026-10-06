@@ -203,12 +203,12 @@ describe("openrouter provider", () => {
 })
 
 describe("gemini provider", () => {
-	it("uses the Gemini OpenAI-compat URL with the flash default model", () => {
+	it("uses the Gemini OpenAI-compat URL with the flash-lite default model", () => {
 		// No trailing slash — the fetch client string-concatenates /chat/completions.
 		expect(PROVIDER_CONFIGS.gemini.baseURL).toBe(
 			"https://generativelanguage.googleapis.com/v1beta/openai",
 		)
-		expect(PROVIDER_CONFIGS.gemini.defaultModel).toBe("gemini-3.8-flash")
+		expect(PROVIDER_CONFIGS.gemini.defaultModel).toBe("gemini-3.5-flash-lite")
 	})
 
 	it("exposes a live model list for selection", () => {

@@ -244,7 +244,7 @@ API key lookup checks the env var first, then the INI file.
 | `commandcode` | `COMMANDCODE_API_KEY` | `deepseek/deepseek-v4-flash` | Built-in fetch |
 | `omniroute` | `OMNIROUTE_API_KEY` | `auto/fast` | Built-in fetch (none — local gateway) |
 | `openrouter` | `OPENROUTER_API_KEY` | `openrouter/free` | Built-in fetch |
-| `gemini` | `GEMINI_API_KEY` | `gemini-3.8-flash` | Built-in fetch |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3.5-flash-lite` | Built-in fetch |
 
 All seven use OpenAI-compatible APIs and most have a generous free tier. Per-
 provider model overrides: set `model_groq`, `model_cerebras`, `model_mistral`,
